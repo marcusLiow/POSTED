@@ -892,6 +892,28 @@ const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, 
 let daySnapshot = null, selectedDraft = 0;
 const reduce = ()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/* ================= RELATIONSHIP GRAPH =================
+   Classmates aren't isolated meters: a delta with one NPC ripples,
+   at a discounted weight, to the NPCs who'd plausibly hear about it.
+   Direct deltas (below) stay exactly as authored/AI-judged — this only
+   adds a secondary, smaller ripple on top. */
+const SOCIAL_GRAPH = {
+  john:  { drake:0.5,  alex:0.25 },
+  drake: { john:0.5,   alex:0.2  },
+  alex:  { john:0.25,  drake:0.2 }
+};
+const VISIBILITY_WEIGHT = { public:1, private:0.15 };
+function propagateRelationship(sourceKey, delta, visibility){
+  const neighbors = SOCIAL_GRAPH[sourceKey] || {};
+  const vis = VISIBILITY_WEIGHT[visibility] ?? 0;
+  if(!delta || !vis) return;
+  Object.entries(neighbors).forEach(([nKey, weight])=>{
+    const prop = nKey+"Rel";
+    const ripple = delta * weight * vis;
+    S[prop] = Math.max(0, Math.min(5, S[prop] + ripple));
+  });
+}
+
 const PALETTE = {
   ext:0xDBD7D0, wall:0xF4EDE0, base:0xE2D5BE,
   wood:0xD8AC7C, woodDark:0xB98D63, frame:0xC79A72,
@@ -2299,6 +2321,8 @@ function showReflection(){
     ignored:{g:"F", cls:"f", pay:25, dRel:-2}
   }[key];
   S.alexRel=Math.max(0,Math.min(5,S.alexRel+R.dRel));
+  /* the DM is private — small ripple only, unlike the public post */
+  propagateRelationship("alex", R.dRel, "private");
   document.getElementById("gradeSlot2").innerHTML=`<span class="grade ${R.cls}">${R.g}</span>`;
   document.getElementById("payoutLine2").textContent=`+${R.pay} coins`;
   setCoins(S.coins+R.pay);
@@ -2354,8 +2378,10 @@ function renderHearts(anim){
 }
 function answer(kind){
   S._prevRel=S.johnRel;
-  if(kind==="bad") S.johnRel=Math.max(0,S.johnRel-2);
-  else S.johnRel=Math.min(5,S.johnRel+1);
+  const johnDelta = kind==="bad" ? -2 : +1;
+  S.johnRel=Math.max(0,Math.min(5,S.johnRel+johnDelta));
+  /* everyone saw the post — the confrontation reaction ripples publicly */
+  propagateRelationship("john", johnDelta, "public");
   renderHearts(kind==="bad"?"crack":"pop");
   document.querySelectorAll("#vnChoices .vn-choice").forEach(b=>b.disabled=true);
   /* let the hearts land, then John reacts, then the report card */
@@ -2388,6 +2414,9 @@ function showSummary(kind){
                : kind==="good" ? -1
                : S.apologyStyle==="weak" ? -1 : +1;
   S.drakeRel=Math.max(0,Math.min(5,S.drakeRel+dDelta));
+  /* "amends" is a private, face-to-face apology — everything else is
+     Drake finding out about the public post, same as John's confrontation */
+  propagateRelationship("drake", dDelta, kind==="amends" ? "private" : "public");
   if(kind==="bad"){
     S.grade="F";
     lines.innerHTML=`<div class="sum-line">John hates you.</div>
