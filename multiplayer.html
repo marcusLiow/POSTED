@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posted — Multiplayer Personas (minimal UI)</title>
+<style>
+  :root{--ink:#3a3129;--bg:#f4ede0;--card:#fff;--accent:#d87460;--green:#75935d;--soft:#9c9284}
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:24px;max-width:880px;margin-inline:auto}
+  h1{font-size:22px;margin-bottom:4px}
+  .sub{color:var(--soft);font-size:13px;margin-bottom:24px}
+  section{background:var(--card);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:0 4px 14px rgba(0,0,0,.06)}
+  h2{font-size:15px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.5px;color:var(--soft)}
+  label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+  input[type=text],input[type=email],input[type=password],textarea{width:100%;padding:9px 11px;border:1.5px solid #e7ded0;border-radius:8px;font-size:14px;font-family:inherit}
+  textarea{resize:vertical;min-height:50px}
+  button{font-family:inherit;font-weight:700;font-size:13.5px;border:none;border-radius:999px;padding:9px 18px;cursor:pointer;background:var(--accent);color:#fff;margin-top:8px}
+  button.secondary{background:#e7ded0;color:var(--ink)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:180px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .chip{border:1.5px solid #e7ded0;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;user-select:none}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .count{font-size:11px;color:var(--soft);font-weight:600}
+  .persona-card{border:1.5px solid #eee2d0;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px}
+  .persona-card .traits{color:var(--soft);font-size:12px;margin-top:3px}
+  .msg{font-size:13px;padding:8px 10px;border-radius:8px;margin-top:10px}
+  .msg.err{background:#fde5e0;color:#a33}
+  .msg.ok{background:#e7f0e0;color:#3a6b2a}
+  .npc-block{border-top:1px dashed #e7ded0;padding-top:12px;margin-top:12px}
+  .npc-block h3{margin:0 0 2px;font-size:14px}
+  .npc-block .traits{color:var(--soft);font-size:12px}
+  .reply{background:#f8f3ea;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13.5px}
+  .grade{font-weight:800;color:var(--accent)}
+  code{background:#f0e9db;padding:2px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+
+<h1>Posted — multiplayer personas</h1>
+<div class="sub">Minimal functional UI over the backend in <code>multiplayer-persona-design.md</code>. Not the styled 3D game — proves the pipeline: sign up → build a persona → start a playthrough → get matched with other players' personas → talk to them, AI-judged.</div>
+
+<section id="authSection">
+  <h2>Account</h2>
+  <div id="authForms" class="row">
+    <div>
+      <label>Email</label>
+      <input type="email" id="email" placeholder="you@example.com">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="min 8 characters">
+      <button onclick="doSignup()">Sign up</button>
+      <button class="secondary" onclick="doLogin()">Log in</button>
+    </div>
+  </div>
+  <div id="authStatus" class="msg" style="display:none"></div>
+  <div id="loggedInBar" style="display:none">
+    Signed in. <button class="secondary" onclick="logout()">Log out</button>
+  </div>
+</section>
+
+<section id="personaSection" style="display:none">
+  <h2>Create a persona</h2>
+  <label>Name</label>
+  <input type="text" id="pName" placeholder="What should this persona be called?">
+
+  <label>Personality — pick exactly 3 <span class="count" id="pCount">(0/3)</span></label>
+  <div class="chips" id="personalityChips"></div>
+
+  <label>Values — pick exactly 2 <span class="count" id="vCount">(0/2)</span></label>
+  <div class="chips" id="valuesChips"></div>
+
+  <label>Interests — pick exactly 3 <span class="count" id="iCount">(0/3)</span></label>
+  <div class="chips" id="interestsChips"></div>
+
+  <label>Anything else about how you'd react? (optional, ≤200 chars)</label>
+  <textarea id="pFreeText" maxlength="200"></textarea>
+
+  <button onclick="createPersona()">Create persona</button>
+  <div id="personaMsg" class="msg" style="display:none"></div>
+
+  <h2 style="margin-top:20px">My personas</h2>
+  <div id="personaList"></div>
+</section>
+
+<section id="playSection" style="display:none">
+  <h2>Playthrough</h2>
+  <button onclick="startPlaythrough()">Start new playthrough (match me with 3 personas)</button>
+  <div id="playMsg" class="msg" style="display:none"></div>
+  <div id="npcBlocks"></div>
+</section>
+
+<script>
+const API = "";
+let token = localStorage.getItem("postedToken") || null;
+let currentPlaythroughId = null;
+
+const TRAITS = {
+  personality: ["anxious","guarded","warm","blunt","avoidant","protective","quick-to-forgive","slow-to-trust","confrontational","conflict-avoidant","affectionate","sarcastic","earnest","easily-hurt","even-tempered","dramatic","reserved","impulsive"],
+  values: ["loyalty","honesty","humor","ambition","independence","family","fairness","creativity","stability","adventure"],
+  interests: ["food","gaming","art","sports","music","movies/tv","fashion","fitness","reading","travel","tech","nature"]
+};
+const COUNTS = { personality: 3, values: 2, interests: 3 };
+const picked = { personality: [], values: [], interests: [] };
+
+function renderChips(){
+  for(const cat of Object.keys(TRAITS)){
+    const wrap = document.getElementById(cat+"Chips");
+    wrap.innerHTML = "";
+    TRAITS[cat].forEach(t=>{
+      const c = document.createElement("div");
+      c.className = "chip"+(picked[cat].includes(t)?" on":"");
+      c.textContent = t;
+      c.onclick = ()=>toggleChip(cat, t);
+      wrap.appendChild(c);
+    });
+  }
+  document.getElementById("pCount").textContent = `(${picked.personality.length}/${COUNTS.personality})`;
+  document.getElementById("vCount").textContent = `(${picked.values.length}/${COUNTS.values})`;
+  document.getElementById("iCount").textContent = `(${picked.interests.length}/${COUNTS.interests})`;
+}
+function toggleChip(cat, t){
+  const i = picked[cat].indexOf(t);
+  if(i>=0) picked[cat].splice(i,1);
+  else if(picked[cat].length < COUNTS[cat]) picked[cat].push(t);
+  renderChips();
+}
+renderChips();
+
+function showMsg(id, text, ok){
+  const el = document.getElementById(id);
+  el.style.display = "block";
+  el.className = "msg " + (ok ? "ok" : "err");
+  el.textContent = text;
+}
+
+async function api(path, opts={}){
+  const headers = Object.assign({"content-type":"application/json"}, opts.headers||{});
+  if(token) headers.Authorization = "Bearer " + token;
+  const res = await fetch(API+path, Object.assign({}, opts, {headers}));
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || ("request failed ("+res.status+")"));
+  return data;
+}
+
+async function doSignup(){
+  try{
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const data = await api("/api/signup", {method:"POST", body: JSON.stringify({email, password})});
+    setToken(data.token);
+    showMsg("authStatus", "Signed up and logged in.", true);
+  }catch(e){ showMsg("authStatus", e.message, false); }
+}
+async function doLogin(){
+  try{
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const data = await api("/api/login", {method:"POST", body: JSON.stringify({email, password})});
+    setToken(data.token);
+    showMsg("authStatus", "Logged in.", true);
+  }catch(e){ showMsg("authStatus", e.message, false); }
+}
+function setToken(t){
+  token = t;
+  localStorage.setItem("postedToken", t);
+  refreshAuthUI();
+  loadPersonas();
+}
+function logout(){
+  token = null;
+  localStorage.removeItem("postedToken");
+  refreshAuthUI();
+}
+function refreshAuthUI(){
+  document.getElementById("loggedInBar").style.display = token ? "block" : "none";
+  document.getElementById("authForms").style.display = token ? "none" : "flex";
+  document.getElementById("personaSection").style.display = token ? "block" : "none";
+  document.getElementById("playSection").style.display = token ? "block" : "none";
+}
+
+async function createPersona(){
+  try{
+    const name = document.getElementById("pName").value.trim();
+    const free_text = document.getElementById("pFreeText").value.trim();
+    if(picked.personality.length!==3 || picked.values.length!==2 || picked.interests.length!==3){
+      throw new Error("pick exactly 3 personality, 2 values, 3 interests");
+    }
+    await api("/api/personas", {method:"POST", body: JSON.stringify({
+      name, personality: picked.personality, values: picked.values, interests: picked.interests, free_text: free_text||undefined
+    })});
+    showMsg("personaMsg", "Persona created.", true);
+    document.getElementById("pName").value = "";
+    document.getElementById("pFreeText").value = "";
+    picked.personality=[]; picked.values=[]; picked.interests=[]; renderChips();
+    loadPersonas();
+  }catch(e){ showMsg("personaMsg", e.message, false); }
+}
+
+async function loadPersonas(){
+  try{
+    const list = await api("/api/personas");
+    const wrap = document.getElementById("personaList");
+    wrap.innerHTML = list.length ? "" : "<div class='traits'>No personas yet.</div>";
+    list.forEach(p=>{
+      const card = document.createElement("div");
+      card.className = "persona-card";
+      card.innerHTML = `<b>${p.name}</b> ${p.is_active?"":"<span class='count'>(inactive)</span>"}
+        <div class="traits">${p.personality.join(", ")} · ${p.values.join(", ")} · ${p.interests.join(", ")}</div>
+        ${p.free_text?`<div class="traits">"${p.free_text}"</div>`:""}`;
+      const toggleBtn = document.createElement("button");
+      toggleBtn.className = "secondary";
+      toggleBtn.textContent = p.is_active ? "Deactivate (pull from matching)" : "Activate";
+      toggleBtn.onclick = async ()=>{
+        await api(`/api/personas/${p.id}/active`, {method:"PATCH", body: JSON.stringify({is_active: !p.is_active})});
+        loadPersonas();
+      };
+      const statsBtn = document.createElement("button");
+      statsBtn.className = "secondary";
+      statsBtn.textContent = "Stats";
+      statsBtn.onclick = async ()=>{
+        const s = await api(`/api/personas/${p.id}/stats`);
+        alert(`Currently active in ${s.times_matched} playthrough(s).`);
+      };
+      card.appendChild(toggleBtn);
+      card.appendChild(statsBtn);
+      wrap.appendChild(card);
+    });
+  }catch(e){ /* not logged in yet */ }
+}
+
+async function startPlaythrough(){
+  try{
+    const data = await api("/api/playthroughs", {method:"POST"});
+    currentPlaythroughId = data.id;
+    showMsg("playMsg", `Playthrough started (day ${data.current_day}). Matched with ${data.assignments.length} personas.`, true);
+    renderNpcBlocks(data.assignments);
+  }catch(e){ showMsg("playMsg", e.message, false); }
+}
+
+function renderNpcBlocks(assignments){
+  const wrap = document.getElementById("npcBlocks");
+  wrap.innerHTML = "";
+  assignments.forEach(a=>{
+    const block = document.createElement("div");
+    block.className = "npc-block";
+    block.innerHTML = `
+      <h3>${a.display_name} <span class="count">(${a.relationship_score.toFixed(1)}/5)</span></h3>
+      <div class="traits">${a.personality.join(", ")} · ${a.values.join(", ")} · ${a.interests.join(", ")}</div>
+      <input type="text" placeholder="Say something to ${a.display_name}…" id="input-${a.role_slug}">
+      <button onclick="sendDecision('${a.role_slug}')">Send</button>
+      <div class="reply" id="reply-${a.role_slug}" style="display:none"></div>
+    `;
+    wrap.appendChild(block);
+  });
+}
+
+async function sendDecision(roleSlug){
+  const input = document.getElementById(`input-${roleSlug}`);
+  const text = input.value.trim();
+  if(!text) return;
+  const replyEl = document.getElementById(`reply-${roleSlug}`);
+  replyEl.style.display = "block";
+  replyEl.textContent = "…thinking…";
+  try{
+    const data = await api(`/api/playthroughs/${currentPlaythroughId}/decision`, {
+      method:"POST", body: JSON.stringify({role_slug: roleSlug, day:1, player_input: text})
+    });
+    replyEl.innerHTML = `"${data.npc_reply}" — <span class="grade">${data.grade}</span> (${data.outcome}, relationship now ${data.relationship_score.toFixed(1)}/5)`;
+    input.value = "";
+  }catch(e){ replyEl.textContent = "Error: " + e.message; }
+}
+
+refreshAuthUI();
+if(token) loadPersonas();
+</script>
+</body>
+</html>

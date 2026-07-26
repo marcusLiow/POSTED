@@ -1,56 +1,42 @@
 require("dotenv").config();
+const crypto = require("crypto");
 const path = require("path");
 const express = require("express");
-const Anthropic = require("@anthropic-ai/sdk").default;
+const { judge } = require("./judge");
 
-const PORT = process.env.PORT || 3000;
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
-
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.warn("[posted] Warning: ANTHROPIC_API_KEY is not set — /api/judge will return neutral fallbacks. Copy .env.example to .env and add your key.");
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = crypto.randomBytes(32).toString("hex");
+  console.warn("[posted] Warning: JWT_SECRET is not set — generated a random one for this process only. Existing tokens will stop working on restart; set JWT_SECRET in .env for persistent sessions.");
+}
+if (!process.env.DATABASE_URL) {
+  console.warn("[posted] Warning: DATABASE_URL is not set — multiplayer routes will fail until it's configured in .env (see .env.example).");
 }
 
-const anthropic = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
-
+const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(express.json({ limit: "16kb" }));
 
-function stripFences(s) {
-  return s.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-}
-
+// ---- existing single-player demo: unchanged, still hardcoded John/Drake/Alex ----
 app.post("/api/judge", async (req, res) => {
   const { system, userText } = req.body || {};
-  const fallback = { outcome: "weak", npc_reply: "…okay.", relationship_delta: 0, grade: "C" };
-
   if (typeof system !== "string" || !system.trim()) {
     return res.status(400).json({ error: "missing system prompt" });
   }
-  if (!anthropic) {
-    return res.json(fallback);
-  }
-
-  try {
-    const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      system,
-      messages: [{ role: "user", content: (userText && String(userText).trim()) || "(said nothing)" }]
-    });
-    const raw = (msg.content || []).map((b) => b.text || "").join("");
-    const parsed = JSON.parse(stripFences(raw));
-    res.json({ ...fallback, ...parsed });
-  } catch (err) {
-    console.error("[posted] /api/judge failed:", err.message);
-    res.json(fallback);
-  }
+  res.json(await judge(system, userText || ""));
 });
+
+// ---- multiplayer persona system, per multiplayer-persona-design.md ----
+app.use("/api", require("./routes/auth"));
+app.use("/api/personas", require("./routes/personas"));
+app.use("/api/roles", require("./routes/roles"));
+app.use("/api/playthroughs", require("./routes/playthroughs"));
 
 app.use(express.static(__dirname));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "Posted-Demo v16.html"));
+});
+app.get("/multiplayer", (req, res) => {
+  res.sendFile(path.join(__dirname, "multiplayer.html"));
 });
 
 app.listen(PORT, () => {
