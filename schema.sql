@@ -75,6 +75,24 @@ CREATE INDEX IF NOT EXISTS idx_personas_owner ON personas(owner_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_persona ON persona_assignments(persona_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_role ON persona_assignments(role_id);
 
+-- Per-NPC swarm agents (npc-swarm-agents-design.md) — see migrations/002_npc_agent_state.sql
+-- for the same DDL applied as a standalone migration against an already-running DB.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'private_interaction';
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_scope_check;
+ALTER TABLE events ADD CONSTRAINT events_scope_check CHECK (scope IN ('public_post', 'private_interaction'));
+
+CREATE TABLE IF NOT EXISTS npc_agent_state (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  playthrough_id      UUID NOT NULL REFERENCES playthroughs(id) ON DELETE CASCADE,
+  role_id             UUID NOT NULL REFERENCES roles(id),
+  arc_status          TEXT NOT NULL DEFAULT 'active' CHECK (arc_status IN ('active','strained','broken','resolved')),
+  tolerance_note      TEXT,
+  last_reflection_day INT NOT NULL DEFAULT 0,
+  internal_notes      TEXT,
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (playthrough_id, role_id)
+);
+
 -- seed the 3 existing characters as rows, not code — also doubles as the fallback
 -- pool (§3) when a role's candidate pool of real player personas is empty
 INSERT INTO roles (slug, display_name, dramatic_function) VALUES

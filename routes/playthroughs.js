@@ -3,6 +3,7 @@ const { query } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { matchPersonasForPlaythrough } = require("../matching");
 const { judge } = require("../judge");
+const { runNpcReflection } = require("../reflection");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -75,7 +76,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-function buildSystemPrompt({ role, persona, relationshipScore, recentEvents }) {
+function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, agentState }) {
   const traits = `Personality: ${persona.personality.join(", ")}. Values: ${persona.values_.join(", ")}. Interests: ${persona.interests.join(", ")}.`;
   const freeText = persona.free_text ? `Additional context from the persona's owner: "${persona.free_text}"` : "";
   const history = recentEvents.length
@@ -84,11 +85,19 @@ function buildSystemPrompt({ role, persona, relationshipScore, recentEvents }) {
         .join("\n")
     : "RECENT HISTORY WITH THIS PLAYER: none yet — this is your first interaction.";
 
+  // Fed by the reflective layer (reflection.js), not this call itself — see
+  // npc-swarm-agents-design.md. Lets an NPC's between-day private reasoning
+  // actually shift how the same NPC judges the player's next message.
+  const standing = agentState
+    ? `YOUR CURRENT STANDING (from your own private reflection, since you last spoke to the player): arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `; you privately noted: "${agentState.tolerance_note}"` : ""}. Let this genuinely color your tone and grading below — e.g. if arc_status is "strained" or "broken", or your note describes a shorter fuse, don't judge this message as generously as you would coming in neutral; if "resolved", you can be warmer than the raw relationship number alone suggests.`
+    : "";
+
   return `You are voicing ${role.display_name} in a social-drama game called Posted — ${role.dramatic_function || "a classmate of the player"}.
 ${traits}
 ${freeText}
 CURRENT RELATIONSHIP: your closeness to the player is ${relationshipScore}/5 (0 = you hate them, 5 = very close).
 ${history}
+${standing}
 TASK: read the player's message below and judge it holistically — tone, sincerity, whether it actually addresses how you feel — not by matching fixed phrases. Let your personality and values above color both your judgment and how you reply, so different personas react differently to similar words.
 Decide:
 - outcome: "bad" | "weak" | "good" | "great"
@@ -130,8 +139,13 @@ router.post("/:id/decision", async (req, res) => {
        WHERE playthrough_id = $1 AND role_id = $2 ORDER BY created_at DESC LIMIT 5`,
       [playthrough.id, role.id]
     );
+    const { rows: agentStateRows } = await query(
+      "SELECT arc_status, tolerance_note FROM npc_agent_state WHERE playthrough_id = $1 AND role_id = $2",
+      [playthrough.id, role.id]
+    );
+    const agentState = agentStateRows[0] || null;
 
-    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse() });
+    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse(), agentState });
     const result = await judge(system, player_input || "");
 
     const delta = typeof result.relationship_delta === "number" ? Math.round(result.relationship_delta) : 0;
@@ -158,6 +172,68 @@ router.post("/:id/decision", async (req, res) => {
   } catch (err) {
     console.error("[posted] decision failed:", err.message);
     res.status(500).json({ error: "decision failed" });
+  }
+});
+
+// Per npc-swarm-agents-design.md: fires one reflective pass per active role, once
+// per day-advance — the reflective layer, distinct from the reactive /decision judgment
+// above which runs per player message. Nothing in the game currently calls this
+// automatically; it's an explicit "the day is over" action the client/UI triggers.
+router.post("/:id/advance-day", async (req, res) => {
+  try {
+    const playthrough = await loadOwnedPlaythrough(req, res);
+    if (!playthrough) return;
+
+    const nextDay = playthrough.current_day + 1;
+    await query("UPDATE playthroughs SET current_day = $1, updated_at = now() WHERE id = $2", [nextDay, playthrough.id]);
+
+    const { rows: assignments } = await query(
+      "SELECT role_id FROM persona_assignments WHERE playthrough_id = $1",
+      [playthrough.id]
+    );
+
+    const reflections = [];
+    for (const a of assignments) {
+      reflections.push(await runNpcReflection(playthrough.id, a.role_id));
+    }
+
+    res.json({ current_day: nextDay, reflections });
+  } catch (err) {
+    console.error("[posted] advance-day failed:", err.message);
+    res.status(500).json({ error: "advance-day failed" });
+  }
+});
+
+// Undoes a same-playthrough retry properly server-side: deletes this day's (and any
+// later day's) events, then recomputes every role's relationship_score from what's
+// left — 2.5 (the fixed insert baseline, see schema.sql) plus the sum of whatever
+// deltas still remain. No separate "day snapshot" needed; the events log is the
+// source of truth either way. Reflections from earlier, non-retried days are left
+// alone — retrying today doesn't erase what an NPC already privately concluded
+// about yesterday.
+router.post("/:id/retry-day", async (req, res) => {
+  const day = Number.isInteger(req.body?.day) ? req.body.day : 1;
+  try {
+    const playthrough = await loadOwnedPlaythrough(req, res);
+    if (!playthrough) return;
+
+    await query("DELETE FROM events WHERE playthrough_id = $1 AND day >= $2", [playthrough.id, day]);
+    await query(
+      `UPDATE persona_assignments pa
+       SET relationship_score = GREATEST(0, LEAST(5, 2.5 + COALESCE((
+         SELECT SUM(e.relationship_delta) FROM events e
+         WHERE e.playthrough_id = pa.playthrough_id AND e.role_id = pa.role_id
+       ), 0)))
+       WHERE pa.playthrough_id = $1`,
+      [playthrough.id]
+    );
+    await query("UPDATE playthroughs SET current_day = $1, updated_at = now() WHERE id = $2", [day, playthrough.id]);
+
+    const assignments = await loadAssignments(playthrough.id);
+    res.json({ current_day: day, assignments });
+  } catch (err) {
+    console.error("[posted] retry-day failed:", err.message);
+    res.status(500).json({ error: "retry-day failed" });
   }
 });
 

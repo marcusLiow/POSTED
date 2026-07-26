@@ -87,6 +87,7 @@
 <section id="playSection" style="display:none">
   <h2>Playthrough</h2>
   <button onclick="startPlaythrough()">Start new playthrough (match me with 3 personas)</button>
+  <button class="secondary" id="advanceDayBtn" style="display:none" onclick="advanceDay()">Advance to next day (run NPC reflections)</button>
   <div id="playMsg" class="msg" style="display:none"></div>
   <div id="npcBlocks"></div>
 </section>
@@ -230,11 +231,15 @@ async function loadPersonas(){
   }catch(e){ /* not logged in yet */ }
 }
 
+let currentDay = 1;
+
 async function startPlaythrough(){
   try{
     const data = await api("/api/playthroughs", {method:"POST"});
     currentPlaythroughId = data.id;
+    currentDay = data.current_day;
     showMsg("playMsg", `Playthrough started (day ${data.current_day}). Matched with ${data.assignments.length} personas.`, true);
+    document.getElementById("advanceDayBtn").style.display = "inline-block";
     renderNpcBlocks(data.assignments);
   }catch(e){ showMsg("playMsg", e.message, false); }
 }
@@ -251,6 +256,7 @@ function renderNpcBlocks(assignments){
       <input type="text" placeholder="Say something to ${a.display_name}…" id="input-${a.role_slug}">
       <button onclick="sendDecision('${a.role_slug}')">Send</button>
       <div class="reply" id="reply-${a.role_slug}" style="display:none"></div>
+      <div class="traits" id="reflection-${a.role_slug}" style="margin-top:6px"></div>
     `;
     wrap.appendChild(block);
   });
@@ -265,11 +271,30 @@ async function sendDecision(roleSlug){
   replyEl.textContent = "…thinking…";
   try{
     const data = await api(`/api/playthroughs/${currentPlaythroughId}/decision`, {
-      method:"POST", body: JSON.stringify({role_slug: roleSlug, day:1, player_input: text})
+      method:"POST", body: JSON.stringify({role_slug: roleSlug, day: currentDay, player_input: text})
     });
     replyEl.innerHTML = `"${data.npc_reply}" — <span class="grade">${data.grade}</span> (${data.outcome}, relationship now ${data.relationship_score.toFixed(1)}/5)`;
     input.value = "";
   }catch(e){ replyEl.textContent = "Error: " + e.message; }
+}
+
+async function advanceDay(){
+  const btn = document.getElementById("advanceDayBtn");
+  btn.disabled = true;
+  showMsg("playMsg", "Running end-of-day reflections for each NPC…", true);
+  try{
+    const data = await api(`/api/playthroughs/${currentPlaythroughId}/advance-day`, {method:"POST"});
+    currentDay = data.current_day;
+    showMsg("playMsg", `Now day ${data.current_day}.`, true);
+    data.reflections.forEach(r=>{
+      const el = document.getElementById(`reflection-${r.role_slug}`);
+      if(!el) return;
+      const openingLine = r.opening_today ? "there's an opening to reconcile today" : "no opening today — arc has broken";
+      const postLine = r.autonomous_post ? ` · posted: "${r.autonomous_post}"` : "";
+      el.innerHTML = `<b>Reflection:</b> arc_status=${r.arc_status}${r.tolerance_note?` · "${r.tolerance_note}"`:""} · ${openingLine}${postLine}`;
+    });
+  }catch(e){ showMsg("playMsg", e.message, false); }
+  btn.disabled = false;
 }
 
 refreshAuthUI();

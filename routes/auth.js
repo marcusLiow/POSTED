@@ -1,10 +1,29 @@
 const express = require("express");
+const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const { query } = require("../db");
 const { signToken } = require("../middleware/auth");
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Bootstraps a throwaway account so the solo 3D game can talk to the same
+// persona/playthrough backend as the multiplayer system, without a login screen.
+// The client stores the returned token in localStorage and reuses it across visits.
+router.post("/guest", async (req, res) => {
+  try {
+    const email = `guest_${crypto.randomBytes(12).toString("hex")}@posted.local`;
+    const hash = await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 12);
+    const { rows } = await query(
+      "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id",
+      [email, hash]
+    );
+    res.status(201).json({ token: signToken(rows[0].id) });
+  } catch (err) {
+    console.error("[posted] guest bootstrap failed:", err.message);
+    res.status(500).json({ error: "guest bootstrap failed" });
+  }
+});
 
 router.post("/signup", async (req, res) => {
   const { email, password } = req.body || {};

@@ -265,6 +265,10 @@
   .kbar{height:12px; border-radius:999px; background:#EDE3D2; overflow:hidden}
   .kbar i{display:block; height:100%; border-radius:999px;
     background:linear-gradient(90deg,var(--pink2),var(--green)); transition:width .5s ease}
+  #boardFeed{margin-top:10px}
+  #boardFeed .fhead{font-weight:800; font-size:14px; margin-bottom:8px}
+  .feed-post{background:#FAF4E9; border-radius:16px; padding:10px 14px; margin-bottom:8px; font-size:13.5px}
+  .feed-post b{font-weight:800} .feed-post .fday{display:block; color:var(--ink-soft); font-weight:700; font-size:11px; margin-top:2px}
   .shop-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
   .shop-head h2{font-family:'Fredoka'; font-weight:600; font-size:20px}
   .shop-grid{display:flex; gap:14px; justify-content:center; flex-wrap:wrap}
@@ -573,6 +577,7 @@
         <div class="khead"><span>Kindness</span><span id="kindLabel"></span></div>
         <div class="kbar"><i id="kindFill"></i></div>
       </div>
+      <div id="boardFeed"></div>
     </div>
   </section>
 
@@ -911,7 +916,8 @@ class RoundedBoxGeometry extends THREE.BoxGeometry{
 /* ================= STATE ================= */
 const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, ownsTeddy:false,
             ownsRug:false, ownsPosters:false, postChoice:0, alexResponse:null, grade:null, apologyStyle:null,
-            johnGrade:null, apologyGrade:null, apologyOutcome:null, alexGrade:null };
+            johnGrade:null, apologyGrade:null, apologyOutcome:null, alexGrade:null,
+            playthroughId:null, authToken:null, assignments:null, feedPosts:[] };
 let daySnapshot = null, selectedDraft = 0;
 const reduce = ()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -945,6 +951,67 @@ async function aiJudge(systemPrompt, userText, fallback){
 /* How long a judged NPC reply stays on screen before the scene advances. The reply is
    the payoff for what the player actually typed — it needs real reading time, not a beat. */
 const REPLY_LINGER = ()=>reduce()?1400:3400;
+
+/* ================= CONNECT TO THE PERSONA/PLAYTHROUGH BACKEND =================
+   Per npc-swarm-agents-design.md + multiplayer-persona-design.md: the solo game
+   becomes "just another player" in that system — it gets a guest account, a real
+   playthrough, and matched persona assignments (almost always the seeded John/Drake/
+   Alex defaults today, but genuinely pulled from the same schema multiplayer uses,
+   not hardcoded). If the backend/DB is unreachable, judgeMove() below falls back to
+   a stateless one-off call using the original hardcoded personality prompts, so the
+   solo game still plays even without a database — just without persistent memory
+   or reflections. */
+function ensurePlaythrough(){
+  if(S._playthroughPromise) return S._playthroughPromise;
+  S._playthroughPromise = (async()=>{
+    try{
+      let token = localStorage.getItem("postedToken");
+      if(!token){
+        const gRes = await fetch("/api/guest", {method:"POST"});
+        if(!gRes.ok) throw new Error("guest bootstrap failed: "+gRes.status);
+        token = (await gRes.json()).token;
+        localStorage.setItem("postedToken", token);
+      }
+      S.authToken = token;
+      const res = await fetch("/api/playthroughs", {method:"POST", headers:{Authorization:"Bearer "+token}});
+      if(!res.ok) throw new Error("playthrough create failed: "+res.status);
+      const data = await res.json();
+      S.playthroughId = data.id;
+      S.assignments = {};
+      data.assignments.forEach(a=>{ S.assignments[a.role_slug]=a; });
+    }catch(err){
+      console.error("ensurePlaythrough failed — playing without persistent backend", err);
+    }
+  })();
+  return S._playthroughPromise;
+}
+/* One judged "move": tries the persona-backed decision endpoint (real memory,
+   real matched persona, feeds the swarm-agent reflections); falls back to a
+   stateless aiJudge() call with the original hardcoded prompt if unavailable. */
+async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt){
+  await ensurePlaythrough();
+  if(S.playthroughId){
+    try{
+      const res = await fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
+        method:"POST",
+        headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput})
+      });
+      if(!res.ok){
+        console.error("decision call failed", res.status, await res.text().catch(()=>""));
+        stub("AI call failed (" + res.status + ") — using a neutral fallback.");
+        return fallback;
+      }
+      const data = await res.json();
+      return { ...fallback, ...data };
+    }catch(err){
+      console.error("decision call failed", err);
+      stub("Couldn't reach the server — using a neutral fallback.");
+      return fallback;
+    }
+  }
+  return aiJudge(buildFallbackPrompt(), playerInput, fallback);
+}
 
 function gradeClass(g){ return {F:"f", C:"c", "C+":"c", B:"b", A:"a"}[g] || "c"; }
 const PAYOUT_BY_GRADE = {F:25, C:40, "C+":50, B:60, A:75};
@@ -1442,6 +1509,27 @@ function finishSleep(){
   S.day++;
   resetComposer();
   stub("Zzz… a new day.");
+  /* per npc-swarm-agents-design.md: the day-over moment fires one reflective pass
+     per NPC (isolated, best-effort) — fire-and-forget so it never blocks the
+     morning transition; a shifted arc surfaces as a toast if one comes back. */
+  if(S.playthroughId){
+    fetch(`/api/playthroughs/${S.playthroughId}/advance-day`, {
+      method:"POST", headers:{Authorization:"Bearer "+S.authToken}
+    }).then(res=>res.ok?res.json():null).then(data=>{
+      if(!data) return;
+      /* per npc-swarm-agents-design.md's "posting autonomously" gap: a reflection
+         can now also decide to post to the feed on its own, independent of anything
+         the player typed — surfaced here on the bulletin board (S.feedPosts), the
+         nearest existing "check in on everyone" UI, rather than a new feed screen. */
+      (data.reflections||[]).forEach(r=>{
+        if(r.autonomous_post) S.feedPosts.unshift({display_name:r.display_name, text:r.autonomous_post, day:S.day});
+      });
+      const posted=data.reflections.find(r=>r.autonomous_post);
+      const shifted=data.reflections.find(r=>r.changed);
+      if(posted) stub(`📱 ${posted.display_name} posted on Chirper.`);
+      else if(shifted) stub(`${shifted.display_name} seems ${shifted.arc_status==="broken"?"done trying":shifted.arc_status==="resolved"?"at peace with it":"more guarded"} today.`);
+    }).catch(err=>console.error("advance-day failed", err));
+  }
   setTimeout(startMorning, 800);
 }
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
@@ -1955,7 +2043,7 @@ const classCtl={
       roamTimers.push(setTimeout(()=>{ drakeExpr("disappointed"); say(chatBEl,drake,npcReply); }, T(350,2500)));
       roamTimers.push(setTimeout(()=>{
         hushAll(); cinematic=false;
-        classCtl._drakeDone({outcome, delta:result.relationship_delta, grade:result.grade, npc_reply:npcReply});
+        classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
       }, T(350,2500)+REPLY_LINGER()));
       return;
     }
@@ -1970,7 +2058,7 @@ const classCtl={
     roamTimers.push(setTimeout(()=>say(chatBEl,drake,npcReply), T(350,2300)));
     roamTimers.push(setTimeout(()=>{
       hushAll(); reactFloat.classList.remove("go"); reactAnchor=null; cinematic=false;
-      classCtl._drakeDone({outcome, delta:result.relationship_delta, grade:result.grade, npc_reply:npcReply});
+      classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
     }, T(350,2300)+REPLY_LINGER()));
   },
   startReaction(kind, done){
@@ -2283,10 +2371,9 @@ function openStage2(){
 function finalizeDMResult(result){
   clearTimeout(dmIgnoreTimer); dmIgnoreTimer=null;
   const outcome=result.outcome||"weak";
-  const delta=typeof result.relationship_delta==="number"?Math.round(result.relationship_delta):0;
   S.alexResponse=outcome;
   S.alexGrade=result.grade||"C";
-  S.alexRel=Math.max(0,Math.min(5,S.alexRel+delta));
+  S.alexRel=applyRelScore(S.alexRel, result, "relationship_delta");
   dmLockInput();
   dmDone();
 }
@@ -2301,8 +2388,11 @@ async function dmSend(){
   const tp=dmTyping();
   const T=(a,b)=>reduce()?a:b;
   if(dmStage===1){
-    const fallback={npc_reply:"idk. bombed the math test and my mom’s been on me about it all week. it’s dumb"};
-    const result=await aiJudge(alexStage1Prompt(), raw, fallback);
+    /* unscored setup turn, display-wise — but still a real judged decision under the
+       hood (logged to events, relationship_score updated), so stage 2 gets real
+       rolling history to react to instead of a client-passed transcript */
+    const fallback={npc_reply:"idk. bombed the math test and my mom’s been on me about it all week. it’s dumb", outcome:"weak", relationship_delta:0, grade:"C"};
+    const result=await judgeMove("alex", raw, fallback, alexStage1Prompt);
     await new Promise(r=>setTimeout(r, T(200,1300)));
     tp.remove();
     const reply=result.npc_reply||fallback.npc_reply;
@@ -2311,10 +2401,10 @@ async function dmSend(){
     openStage2();
     return;
   }
-  /* ---- stage 2: the whole conversation gets one final AI judgment ---- */
+  /* ---- stage 2: the final AI judgment for this DM ---- */
   const transcript=dmHistory.map(m=>(m.from==="alex"?"Alex: ":"Player: ")+m.text).join("\n")+`\nPlayer: ${raw}`;
   const fallback={npc_reply:"…yeah. thanks I guess.", outcome:"weak", relationship_delta:0, grade:"C"};
-  const result=await aiJudge(alexStage2Prompt(transcript), raw, fallback);
+  const result=await judgeMove("alex", raw, fallback, ()=>alexStage2Prompt(transcript));
   await new Promise(r=>setTimeout(r, T(200,1300)));
   tp.remove();
   const reply=result.npc_reply||fallback.npc_reply;
@@ -2433,15 +2523,21 @@ async function submitJohnAnswer(){
   inp.disabled=true; btn.disabled=true;
   status.textContent="John is reading your reply…";
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await aiJudge(johnSystemPrompt(), raw, fallback);
+  const result=await judgeMove("john", raw, fallback, johnSystemPrompt);
   status.textContent="";
   answerAI(result);
 }
+function applyRelScore(current, result, deltaField){
+  if(typeof result.relationship_score==="number") return Math.max(0,Math.min(5,Math.round(result.relationship_score)));
+  const delta=typeof result[deltaField]==="number"?Math.round(result[deltaField]):0;
+  return Math.max(0,Math.min(5,current+delta));
+}
 function answerAI(result){
   const outcome=result.outcome||"weak";
-  const delta=typeof result.relationship_delta==="number"?Math.round(result.relationship_delta):0;
   S._prevRel=S.johnRel;
-  S.johnRel=Math.max(0,Math.min(5,S.johnRel+delta));
+  const nextRel=applyRelScore(S.johnRel, result, "relationship_delta");
+  const delta=nextRel-S.johnRel;
+  S.johnRel=nextRel;
   S.johnGrade=result.grade||"C";
   addVnBubble(result.npc_reply||"…");
   renderHearts(delta<0?"crack":(delta>0?"pop":undefined));
@@ -2458,8 +2554,7 @@ function answerAI(result){
       if(outcome==="great"){
         /* John reacts first, then the player walks over to Drake in person */
         classCtl.goToDrake((drakeResult)=>{
-          const dDelta=typeof drakeResult.delta==="number"?Math.round(drakeResult.delta):0;
-          S.drakeRel=Math.max(0,Math.min(5,S.drakeRel+dDelta));
+          S.drakeRel=applyRelScore(S.drakeRel, drakeResult, "delta");
           S.apologyOutcome=drakeResult.outcome||"weak";
           S.apologyStyle=(drakeResult.outcome==="bad"||drakeResult.outcome==="weak")?"weak":"own";
           S.apologyGrade=drakeResult.grade||"C";
@@ -2480,7 +2575,7 @@ async function submitDrakeApology(){
   inp.disabled=true; btn.disabled=true;
   status.textContent="Drake is listening…";
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await aiJudge(drakeSystemPrompt(), raw, fallback);
+  const result=await judgeMove("drake", raw, fallback, drakeSystemPrompt);
   status.textContent="";
   document.getElementById("drakeDlg").classList.remove("on");
   document.getElementById("drakeChoices").classList.remove("show");
@@ -2515,15 +2610,41 @@ function showSummary(outcome){
   setCoins(S.coins+pay);
   go("sc-summary");
 }
-function retryDay(){
+/* Undoes the retried day server-side too — deletes that day's logged events and
+   recomputes relationship_score from what's left, so a retry can't leave the
+   backend thinking a decision happened that the player just rewound. Without
+   this, hearts would look reset locally while the server (and any future
+   reflection reading its event log) still remembered the "undone" attempt. */
+async function syncRelFromServer(day){
+  if(!S.playthroughId) return;
+  try{
+    const res = await fetch(`/api/playthroughs/${S.playthroughId}/retry-day`, {
+      method:"POST",
+      headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+      body: JSON.stringify({day})
+    });
+    if(!res.ok){ console.error("retry-day sync failed", res.status); return; }
+    const data=await res.json();
+    (data.assignments||[]).forEach(a=>{
+      if(S.assignments) S.assignments[a.role_slug]=a;
+      const rounded=Math.max(0,Math.min(5,Math.round(a.relationship_score)));
+      if(a.role_slug==="john") S.johnRel=rounded;
+      if(a.role_slug==="drake") S.drakeRel=rounded;
+      if(a.role_slug==="alex") S.alexRel=rounded;
+    });
+  }catch(err){ console.error("retry-day sync failed", err); }
+}
+async function retryDay(){
   if(S.day>=2){
     S.alexResponse=null;
-    setCoins(daySnapshot.coins); S.alexRel=daySnapshot.alexRel;
+    await syncRelFromServer(S.day);
+    setCoins(daySnapshot ? daySnapshot.coins : S.coins);
     stub("Morning rewound.");
     enterDM();
     return;
   }
-  setCoins(daySnapshot.coins); S.johnRel=daySnapshot.johnRel; S.drakeRel=daySnapshot.drakeRel;
+  await syncRelFromServer(S.day);
+  setCoins(daySnapshot.coins);
   S.apologyStyle=null; S.apologyOutcome=null; S.johnGrade=null; S.apologyGrade=null; S.grade=null;
   stub("Day rewound. (Free retry is a spec Q2 default — decide if it should cost something.)");
   resetComposer();
@@ -2564,6 +2685,13 @@ function openBoard(){
   const label = pct>=80?`Golden · ${pct}%` : pct>=60?`Kind · ${pct}%` : pct>=40?`Getting there · ${pct}%` : `Rough · ${pct}%`;
   document.getElementById("kindLabel").textContent=label;
   document.getElementById("kindFill").style.width=pct+"%";
+  const feedEl=document.getElementById("boardFeed");
+  const escHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  feedEl.innerHTML = S.feedPosts.length
+    ? `<div class="fhead">Chirper</div>` + S.feedPosts.slice(0,5).map(p=>
+        `<div class="feed-post"><b>${escHtml(p.display_name)}</b>: ${escHtml(p.text)}<span class="fday">Day ${p.day}</span></div>`
+      ).join("")
+    : "";
   document.getElementById("board").classList.add("open");
 }
 function closeBoard(){ document.getElementById("board").classList.remove("open"); }
@@ -2592,12 +2720,14 @@ function buy(item,cost){
 }
 function startGame(){
   stageEl.classList.remove("titlemode");
+  ensurePlaythrough(); /* fire-and-forget — judgeMove() awaits this again when actually needed */
   startMorning();
 }
 function resetAll(){
   Object.assign(S,{day:1,coins:0,johnRel:3,drakeRel:3,alexRel:3,ownsFlower:false,ownsTeddy:false,
                    ownsRug:false,ownsPosters:false,postChoice:0,alexResponse:null,grade:null,apologyStyle:null,
-                   johnGrade:null,apologyGrade:null,apologyOutcome:null,alexGrade:null});
+                   johnGrade:null,apologyGrade:null,apologyOutcome:null,alexGrade:null,
+                   playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[]});
   closeBoard();
   setCoins(0);
   room3d.setFlower(false); room3d.setTeddy(false);
@@ -2610,7 +2740,7 @@ function resetAll(){
   go("sc-title");
 }
 Object.assign(window,{openShop,closeShop,openBoard,closeBoard,buy,goToBed,submitDrakeApology,retryDay,goHome,submitJohnAnswer,selectDraft,postNow,stub,resetAll,
-                      startGame,dmSend,dmEngaged,closeDM,skipCut});
+                      startGame,dmSend,dmEngaged,closeDM,skipCut,S});
 stageEl.classList.add("titlemode");
 setDayChip("Day 1 · Morning");
 </script>
