@@ -942,6 +942,10 @@ async function aiJudge(systemPrompt, userText, fallback){
     return fallback;
   }
 }
+/* How long a judged NPC reply stays on screen before the scene advances. The reply is
+   the payoff for what the player actually typed — it needs real reading time, not a beat. */
+const REPLY_LINGER = ()=>reduce()?1400:3400;
+
 function gradeClass(g){ return {F:"f", C:"c", "C+":"c", B:"b", A:"a"}[g] || "c"; }
 const PAYOUT_BY_GRADE = {F:25, C:40, "C+":50, B:60, A:75};
 
@@ -1952,7 +1956,7 @@ const classCtl={
       roamTimers.push(setTimeout(()=>{
         hushAll(); cinematic=false;
         classCtl._drakeDone({outcome, delta:result.relationship_delta, grade:result.grade, npc_reply:npcReply});
-      }, T(1700,4700)));
+      }, T(350,2500)+REPLY_LINGER()));
       return;
     }
     /* a real apology: he softens into gratitude — tears stop, touched smile, relief ❤ */
@@ -1967,7 +1971,7 @@ const classCtl={
     roamTimers.push(setTimeout(()=>{
       hushAll(); reactFloat.classList.remove("go"); reactAnchor=null; cinematic=false;
       classCtl._drakeDone({outcome, delta:result.relationship_delta, grade:result.grade, npc_reply:npcReply});
-    }, T(1700,4500)));
+    }, T(350,2300)+REPLY_LINGER()));
   },
   startReaction(kind, done){
     dlgOverlayEl.classList.add("reacting");
@@ -2330,7 +2334,7 @@ function dmDone(){
   setTimeout(()=>{
     document.getElementById("dmClose").textContent="Close Chirper";
     document.getElementById("dmClose").classList.add("show");
-  }, reduce()?200:900);
+  }, REPLY_LINGER());
 }
 function closeDM(){ playCut(); }
 function showReflection(){
@@ -2465,7 +2469,7 @@ function answerAI(result){
       }
       finishUp();
     });
-  }, 900);
+  }, REPLY_LINGER());
 }
 async function submitDrakeApology(){
   const inp=document.getElementById("drakeInput");
