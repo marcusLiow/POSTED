@@ -217,6 +217,18 @@
   .vn-choice:disabled{filter:grayscale(.5) opacity(.7); cursor:not-allowed; transform:none}
   .vn-tag{font-size:13px; font-weight:800; letter-spacing:1.8px; text-transform:uppercase;
     color:rgba(255,253,248,.85); margin-bottom:-4px; text-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .vn-input-row{display:flex; gap:8px; align-items:center}
+  .vn-text-input{width:320px; max-width:60vw; border:none; border-radius:999px; padding:16px 22px;
+    font-family:'Nunito'; font-weight:700; font-size:16px; color:var(--ink); background:#fff; outline:none;
+    box-shadow:0 10px 24px rgba(60,40,22,.34); -webkit-user-select:text; user-select:text}
+  .vn-text-input:disabled{filter:grayscale(.5) opacity(.7)}
+  .vn-send-btn{font-family:'Fredoka'; font-weight:600; font-size:17px; border:none; cursor:pointer;
+    color:#fff; background:var(--green2); border-radius:999px; padding:16px 26px;
+    box-shadow:0 10px 24px rgba(60,40,22,.34); transition:transform .12s}
+  .vn-send-btn:hover{transform:translateX(-4px)}
+  .vn-send-btn:disabled{filter:grayscale(.5) opacity(.7); cursor:not-allowed; transform:none}
+  .vn-ai-status{font-size:12.5px; font-weight:700; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.35);
+    text-align:right; min-height:16px; opacity:.9}
   /* ===== summary ===== */
   .bell{font-size:38px; display:inline-block; animation:ring .8s ease 2}
   @keyframes ring{20%{transform:rotate(18deg)}40%{transform:rotate(-14deg)}60%{transform:rotate(8deg)}80%{transform:rotate(-4deg)}}
@@ -253,6 +265,10 @@
   .kbar{height:12px; border-radius:999px; background:#EDE3D2; overflow:hidden}
   .kbar i{display:block; height:100%; border-radius:999px;
     background:linear-gradient(90deg,var(--pink2),var(--green)); transition:width .5s ease}
+  #boardFeed{margin-top:10px}
+  #boardFeed .fhead{font-weight:800; font-size:14px; margin-bottom:8px}
+  .feed-post{background:#FAF4E9; border-radius:16px; padding:10px 14px; margin-bottom:8px; font-size:13.5px}
+  .feed-post b{font-weight:800} .feed-post .fday{display:block; color:var(--ink-soft); font-weight:700; font-size:11px; margin-top:2px}
   .shop-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
   .shop-head h2{font-family:'Fredoka'; font-weight:600; font-size:20px}
   .shop-grid{display:flex; gap:14px; justify-content:center; flex-wrap:wrap}
@@ -393,6 +409,7 @@
     .vn-nameplate.mobile-show{display:flex; position:absolute; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 27%); left:4%; right:auto}
     .vn-choices{left:4%; align-items:stretch}
     .vn-choice{width:100%; text-align:center}
+    .vn-text-input{width:auto; max-width:none; flex:1}
     .item{width:132px}
     /* day 2 dm + title */
     .dm-bubble{font-size:13px; max-width:82%}
@@ -560,6 +577,7 @@
         <div class="khead"><span>Kindness</span><span id="kindLabel"></span></div>
         <div class="kbar"><i id="kindFill"></i></div>
       </div>
+      <div id="boardFeed"></div>
     </div>
   </section>
 
@@ -662,9 +680,13 @@
       </div>
       <div class="vn-choices" id="vnChoices">
         <div class="vn-tag">Say something</div>
-        <button class="vn-choice bad" onclick="answer('bad')">“Not my fault his singing is terrible.”</button>
-        <button class="vn-choice good" onclick="answer('good')">“I’m sorry. That was wrong.”</button>
-        <button class="vn-choice best" onclick="answer('amends')">Go apologize to Drake in person</button>
+        <div class="vn-input-row">
+          <input class="vn-text-input" id="johnInput" type="text" maxlength="140"
+            placeholder="Type what you’d say to John…" autocomplete="off"
+            onkeydown="if(event.key==='Enter')submitJohnAnswer()">
+          <button class="vn-send-btn" id="johnSendBtn" onclick="submitJohnAnswer()">Send</button>
+        </div>
+        <div class="vn-ai-status" id="johnAiStatus"></div>
       </div>
     </div>
     <div id="drakeDlg">
@@ -672,9 +694,13 @@
       <div class="vn-nameplate mobile-show">Drake</div>
       <div class="vn-choices" id="drakeChoices">
         <div class="vn-tag">How do you apologize?</div>
-        <button class="vn-choice best" onclick="drakeApologize('own')">“That post was wrong. I’m deleting it right now.”</button>
-        <button class="vn-choice good" onclick="drakeApologize('checkin')">“I’m so sorry. Are you okay?”</button>
-        <button class="vn-choice bad" onclick="drakeApologize('weak')">“Sorry if you took it the wrong way.”</button>
+        <div class="vn-input-row">
+          <input class="vn-text-input" id="drakeInput" type="text" maxlength="140"
+            placeholder="Type your apology…" autocomplete="off"
+            onkeydown="if(event.key==='Enter')submitDrakeApology()">
+          <button class="vn-send-btn" id="drakeSendBtn" onclick="submitDrakeApology()">Send</button>
+        </div>
+        <div class="vn-ai-status" id="drakeAiStatus"></div>
       </div>
     </div>
   </section>
@@ -715,7 +741,7 @@
               Chirper — Messages
             </div>
           </div>
-          <div class="urlbar"><span class="url">chirper.app/messages/alex</span></div>
+          <div class="urlbar"><span class="url" id="dmUrl">chirper.app/messages/alex</span></div>
           <div class="chirper">
             <nav class="ch-nav">
               <div class="ch-logo">
@@ -729,7 +755,7 @@
               <div class="ch-me"><div class="av"></div><div>you<small>@you_irl</small></div></div>
             </nav>
             <main class="ch-feed">
-              <div class="dm-day">Alex · @alex.png</div>
+              <div class="dm-day" id="dmDay">Alex · @alex.png</div>
               <div id="dmThread"></div>
               <div class="dm-inputbar" id="dmBar">
                 <input class="dm-input" id="dmInput" type="text" maxlength="80"
@@ -737,12 +763,12 @@
                   onkeydown="if(event.key==='Enter')dmSend()" oninput="dmEngaged()">
                 <button class="dm-send" onclick="dmSend()">Send</button>
               </div>
-              <div class="dm-hint" id="dmHint">demo understands: “same lol” · “are you okay” — AI interpretation coming next build</div>
+              <div class="dm-hint" id="dmHint" style="display:none"></div>
               <button class="btn quiet dm-close" id="dmClose" onclick="closeDM()">Close Chirper</button>
             </main>
             <aside class="ch-trends">
               <h3>Messages</h3>
-              <div class="trend"><b>Alex</b><span>now</span></div>
+              <div class="trend" id="dmTrendFocus"><b>Alex</b><span>now</span></div>
               <div class="trend"><b>John</b><span>yesterday</span></div>
               <div class="trend"><b>study grp 📚</b><span>2d</span></div>
             </aside>
@@ -768,7 +794,7 @@
   <section class="scene" id="sc-reflect">
     <div class="panel-wrap">
       <div class="panel">
-        <div class="eyebrow">Day 2 · after school</div>
+        <div class="eyebrow" id="reflEyebrow">Day 2 · after school</div>
         <h1 id="reflLine">You noticed.</h1>
         <p class="sub" id="reflSub" style="margin-top:8px"></p>
         <div id="gradeSlot2"></div>
@@ -786,12 +812,8 @@
     <div class="panel-wrap">
       <div class="panel">
         <div class="eyebrow">Posted · demo</div>
-        <h1>Two days.</h1>
-        <div class="sum-lines">
-          <div class="sum-line" id="endDay1"></div>
-          <div class="sum-line" id="endDay2"></div>
-          <div class="sum-line">One was public. One wasn’t. Both counted.</div>
-        </div>
+        <h1 id="endTitle">Two days.</h1>
+        <div class="sum-lines" id="endLines"></div>
         <p class="sub" id="endCoins" style="margin-top:10px"></p>
         <div class="btnrow">
           <button class="btn" onclick="resetAll()">Restart demo</button>
@@ -823,6 +845,7 @@
         <li><b>Day 2 retry:</b> the reflection card now has Retry — an override of the addendum’s “you can’t retry noticing” stance, by request. Rewinds to the morning DM.</li>
         <li><b>Cutscene:</b> Alex’s inner thought appears as a bubble — crying if brushed off, beaming if asked. Ignoring leaves his silence unnarrated on purpose.</li>
         <li><b>Movement:</b> click anywhere on the bedroom floor to walk there; the PC still opens Chirper. At night, going to bed walks over, climbs in, and falls asleep (💤) before the day turns.</li>
+        <li><b>AI-judged input (new):</b> John, Drake, and Alex's scenes are now free-text — a live Anthropic API call (proxied through a small Express backend, see server.js) reads what you actually typed and judges tone/sincerity holistically (no fixed-choice buttons, no keyword matching). Run <code>node server.js</code> with an ANTHROPIC_API_KEY in .env and open it at localhost; without a key set server-side, it falls back to a neutral response.</li>
       </ul>
       <div class="btnrow"><button class="btn" onclick="document.getElementById('defaults').classList.remove('open')">Close</button></div>
     </div>
@@ -887,10 +910,168 @@ class RoundedBoxGeometry extends THREE.BoxGeometry{
 <script>
 
 /* ================= STATE ================= */
+const TOTAL_DAYS = 7; // Day 1 is the fixed John/Drake cold-open; day TOTAL_DAYS's bedtime ends the game.
 const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, ownsTeddy:false,
-            ownsRug:false, ownsPosters:false, postChoice:0, alexResponse:null, grade:null, apologyStyle:null };
+            ownsRug:false, ownsPosters:false, postChoice:0, checkinResponse:null, grade:null, apologyStyle:null,
+            johnGrade:null, apologyGrade:null, apologyOutcome:null, checkinGrade:null,
+            checkinRole:null, today:null, todayPromise:null,
+            playthroughId:null, authToken:null, assignments:null, feedPosts:[] };
 let daySnapshot = null, selectedDraft = 0;
+function relOf(slug){ return S[slug+"Rel"]; }
+function setRelOf(slug, v){ S[slug+"Rel"] = v; }
+const escHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const reduce = ()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ================= AI JUDGE (open-ended input, live Anthropic call) =================
+   Replaces the old fixed-choice buttons / regex phrase-matching with a real judgment
+   call per posted-ai-input-plan.md: the model reads what the player actually typed
+   and returns strict JSON — {outcome, npc_reply, relationship_delta, grade} — which
+   drives the same hearts/reaction/grade-stamp presentation that was already here.
+   The actual Anthropic call happens server-side (see server.js /api/judge) so the
+   API key never touches the browser. */
+async function aiJudge(systemPrompt, userText, fallback){
+  try{
+    const res = await fetch("/api/judge", {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body: JSON.stringify({ system: systemPrompt, userText: userText||"" })
+    });
+    if(!res.ok){
+      console.error("AI judge request failed", res.status, await res.text().catch(()=>""));
+      stub("AI call failed (" + res.status + ") — using a neutral fallback.");
+      return fallback;
+    }
+    const parsed = await res.json();
+    return { ...fallback, ...parsed };
+  }catch(err){
+    console.error("AI judge failed", err);
+    stub("Couldn't reach the server — using a neutral fallback.");
+    return fallback;
+  }
+}
+/* How long a judged NPC reply stays on screen before the scene advances. The reply is
+   the payoff for what the player actually typed — it needs real reading time, not a beat. */
+const REPLY_LINGER = ()=>reduce()?1400:3400;
+
+/* ================= CONNECT TO THE PERSONA/PLAYTHROUGH BACKEND =================
+   Per npc-swarm-agents-design.md + multiplayer-persona-design.md: the solo game
+   becomes "just another player" in that system — it gets a guest account, a real
+   playthrough, and matched persona assignments (almost always the seeded John/Drake/
+   Alex defaults today, but genuinely pulled from the same schema multiplayer uses,
+   not hardcoded). If the backend/DB is unreachable, judgeMove() below falls back to
+   a stateless one-off call using the original hardcoded personality prompts, so the
+   solo game still plays even without a database — just without persistent memory
+   or reflections. */
+function ensurePlaythrough(){
+  if(S._playthroughPromise) return S._playthroughPromise;
+  S._playthroughPromise = (async()=>{
+    try{
+      let token = localStorage.getItem("postedToken");
+      if(!token){
+        const gRes = await fetch("/api/guest", {method:"POST"});
+        if(!gRes.ok) throw new Error("guest bootstrap failed: "+gRes.status);
+        token = (await gRes.json()).token;
+        localStorage.setItem("postedToken", token);
+      }
+      S.authToken = token;
+      const res = await fetch("/api/playthroughs", {method:"POST", headers:{Authorization:"Bearer "+token}});
+      if(!res.ok) throw new Error("playthrough create failed: "+res.status);
+      const data = await res.json();
+      S.playthroughId = data.id;
+      S.assignments = {};
+      data.assignments.forEach(a=>{ S.assignments[a.role_slug]=a; });
+    }catch(err){
+      console.error("ensurePlaythrough failed — playing without persistent backend", err);
+    }
+  })();
+  return S._playthroughPromise;
+}
+/* One judged "move": tries the persona-backed decision endpoint (real memory,
+   real matched persona, feeds the swarm-agent reflections); falls back to a
+   stateless aiJudge() call with the original hardcoded prompt if unavailable. */
+async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt){
+  await ensurePlaythrough();
+  if(S.playthroughId){
+    try{
+      const res = await fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
+        method:"POST",
+        headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput})
+      });
+      if(!res.ok){
+        console.error("decision call failed", res.status, await res.text().catch(()=>""));
+        stub("AI call failed (" + res.status + ") — using a neutral fallback.");
+        return fallback;
+      }
+      const data = await res.json();
+      return { ...fallback, ...data };
+    }catch(err){
+      console.error("decision call failed", err);
+      stub("Couldn't reach the server — using a neutral fallback.");
+      return fallback;
+    }
+  }
+  return aiJudge(buildFallbackPrompt(), playerInput, fallback);
+}
+
+function gradeClass(g){ return {F:"f", C:"c", "C+":"c", B:"b", A:"a"}[g] || "c"; }
+const PAYOUT_BY_GRADE = {F:25, C:40, "C+":50, B:60, A:75};
+
+/* ---- per-NPC personality anchors + judgment prompts ---- */
+const JSON_SPEC = `Respond with STRICT JSON only — no markdown code fences, no commentary before or after:
+{"outcome":"bad|weak|good|great","npc_reply":"...","relationship_delta":0,"grade":"F|C|C+|B|A"}`;
+
+function johnSystemPrompt(){
+  return `You are voicing John in a school-drama game called Posted. John is protective of his friends, reacts fast and bluntly in the moment, but forgives quickly once someone genuinely owns what they did.
+SCENE: John just confronted the player in the classroom, because the player posted something online mocking Drake's singing — Drake saw it and was crying in the bathroom.
+CURRENT RELATIONSHIP: John's closeness to the player is ${S.johnRel}/5 (0=hates them, 5=very close).
+TASK: read the player's exact reply below and judge it holistically — tone, sincerity, whether they take responsibility or deflect/blame Drake. Judge the substance and spirit of what they said, not fixed keywords.
+Decide:
+- outcome: "bad" (defensive/dismissive/blames Drake), "weak" (a hollow or conditional non-apology), "good" (a real apology, but just words), or "great" (a real apology that also signals they're willing to make it right in person — e.g. wants to go talk to Drake, take the post down, fix it for real)
+- npc_reply: a short 1-2 sentence in-character line from John reacting to what the player said
+- relationship_delta: -2 to +2 — how much John's closeness should shift. Weigh how much trust is already there: the same words land harder the closer they already are.
+- grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
+${JSON_SPEC}`;
+}
+function drakeSystemPrompt(){
+  return `You are voicing Drake in a school-drama game called Posted. Drake is quiet, slow to trust, doesn't confront people directly, and holds hurt for a while — a real apology to him has to be specific and take ownership, not just "sorry you felt that way."
+SCENE: the player just walked over to apologize to Drake face-to-face, after publicly posting something that mocked his singing and made him cry in front of the school.
+CURRENT RELATIONSHIP: Drake's closeness to the player is ${S.drakeRel}/5 (0=hates them, 5=very close).
+TASK: read the player's exact words below and judge them holistically — do they own it specifically, or hedge/deflect? Judge substance and spirit, not fixed phrases.
+Decide:
+- outcome: "bad" (dismissive or blames Drake), "weak" (a conditional/hollow "sorry if…" non-apology), "good" (a sincere apology), or "great" (a sincere apology that owns it specifically and commits to making it right, e.g. taking the post down)
+- npc_reply: a short 1-2 sentence in-character reply from Drake — guarded if the apology was weak, quietly grateful if it was real
+- relationship_delta: -2 to +2 — weigh that Drake is already at ${S.drakeRel}/5 closeness; trust already spent matters more here than a stranger's apology would
+- grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
+${JSON_SPEC}`;
+}
+function dispName(roleSlug){
+  return S.assignments?.[roleSlug]?.display_name || (roleSlug[0].toUpperCase()+roleSlug.slice(1));
+}
+function checkinStage1Prompt(roleSlug){
+  const name=dispName(roleSlug);
+  return `You are voicing ${name} in a teen social-app DM, in a game called Posted. ${name} is checking in on the player, a little anxious, and is easily reassured by even a little genuine attention.
+CURRENT RELATIONSHIP: ${name}'s closeness to the player is ${relOf(roleSlug)}/5.
+TASK: read the player's exact reply below and write ${name}'s next DM message, in their own voice (lowercase, casual — like real texting).
+- If the reply shows genuine curiosity or care (asking what's wrong, checking in), have ${name} open up a little more.
+- If the reply is dismissive, jokey, or brushes past it, have ${name} respond guardedly or a little hurt in one short line, without lecturing the player — they're still a teenager texting, not narrating their own feelings.
+Judge the substance and tone of what they actually wrote, not fixed keywords.
+Respond with STRICT JSON only: {"npc_reply":"..."}`;
+}
+function checkinStage2Prompt(roleSlug, transcript){
+  const name=dispName(roleSlug);
+  return `You are voicing ${name} in a teen social-app DM, in a game called Posted. ${name} is checking in on the player, a little anxious, and is easily reassured by even a little genuine attention.
+CONVERSATION SO FAR:
+${transcript}
+CURRENT RELATIONSHIP: ${name}'s closeness to the player is ${relOf(roleSlug)}/5.
+TASK: read the player's final reply (the last "Player:" line) in light of the whole conversation, and judge holistically whether the player showed up for ${name}, even a little — tone, sincerity, whether they responded to how ${name} is actually feeling. Don't keyword-match; judge substance and spirit.
+Decide:
+- outcome: "bad" (dismissive, ignored their feelings), "weak" (kept it surface-level / joked it off), "good" (showed some real care), or "great" (genuinely showed up for them)
+- npc_reply: ${name}'s short final in-character DM reply
+- relationship_delta: -2 to +2, weighing that ${name} is already at ${relOf(roleSlug)}/5 closeness
+- grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
+${JSON_SPEC}`;
+}
 
 const PALETTE = {
   ext:0xDBD7D0, wall:0xF4EDE0, base:0xE2D5BE,
@@ -1329,10 +1510,32 @@ function goToBed(){
   };
 }
 function finishSleep(){
-  if(S.day>=2){ showEnding(); return; }
+  if(S.day>=TOTAL_DAYS){ showEnding(); return; }
   S.day++;
   resetComposer();
   stub("Zzz… a new day.");
+  S.todayPromise=fetchToday();
+  /* per npc-swarm-agents-design.md: the day-over moment fires one reflective pass
+     per NPC (isolated, best-effort) — fire-and-forget so it never blocks the
+     morning transition; a shifted arc surfaces as a toast if one comes back. */
+  if(S.playthroughId){
+    fetch(`/api/playthroughs/${S.playthroughId}/advance-day`, {
+      method:"POST", headers:{Authorization:"Bearer "+S.authToken}
+    }).then(res=>res.ok?res.json():null).then(data=>{
+      if(!data) return;
+      /* per npc-swarm-agents-design.md's "posting autonomously" gap: a reflection
+         can now also decide to post to the feed on its own, independent of anything
+         the player typed — surfaced here on the bulletin board (S.feedPosts), the
+         nearest existing "check in on everyone" UI, rather than a new feed screen. */
+      (data.reflections||[]).forEach(r=>{
+        if(r.autonomous_post) S.feedPosts.unshift({display_name:r.display_name, text:r.autonomous_post, day:S.day});
+      });
+      const posted=data.reflections.find(r=>r.autonomous_post);
+      const shifted=data.reflections.find(r=>r.changed);
+      if(posted) stub(`📱 ${posted.display_name} posted on Chirper.`);
+      else if(shifted) stub(`${shifted.display_name} seems ${shifted.arc_status==="broken"?"done trying":shifted.arc_status==="resolved"?"at peace with it":"more guarded"} today.`);
+    }).catch(err=>console.error("advance-day failed", err));
+  }
   setTimeout(startMorning, 800);
 }
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
@@ -1805,7 +2008,10 @@ const classCtl={
         /* he notices you before you speak */
         say(chatBEl,drake,"…what do you want?");
         roamTimers.push(setTimeout(()=>{
-          document.querySelectorAll("#drakeChoices .vn-choice").forEach(b=>b.disabled=false);
+          const drakeInp=document.getElementById("drakeInput");
+          drakeInp.value=""; drakeInp.disabled=false;
+          document.getElementById("drakeSendBtn").disabled=false;
+          document.getElementById("drakeAiStatus").textContent="";
           document.getElementById("drakeDlg").classList.add("on");
           document.getElementById("drakeChoices").classList.add("show");
         }, reduce()?150:1100));
@@ -1831,26 +2037,20 @@ const classCtl={
       }};
     },1700));
   },
-  /* the player picked an apology style */
-  drakeAnswer(kind){
+  /* the player typed their apology; result is the AI's judgment of it */
+  drakeAnswerAI(result, playerText){
     const T=(a,b)=>reduce()?a:b;
-    document.querySelectorAll("#drakeChoices .vn-choice").forEach(b=>b.disabled=true);
-    document.getElementById("drakeDlg").classList.remove("on");
-    document.getElementById("drakeChoices").classList.remove("show");
-    const LINES={
-      own:    ["That post was wrong. I’m deleting it right now.", "…you actually mean that. Thanks."],
-      checkin:["I’m so sorry. Are you okay?",                     "…kinda. Thanks for coming over. Seriously."],
-      weak:   ["Sorry if you took it the wrong way.",             "…“if”? Wow. Okay."]
-    }[kind];
-    say(chatAEl,playerC,LINES[0]);
-    if(kind==="weak"){
-      /* a non-apology: he flinches, then it settles into disappointment */
+    const outcome=result.outcome||"weak";
+    const npcReply=result.npc_reply||"…";
+    say(chatAEl,playerC,playerText);
+    if(outcome==="bad"||outcome==="weak"){
+      /* not a real apology: he flinches, then it settles into disappointment */
       roamTimers.push(setTimeout(()=>drakeExpr("shock"), T(200,1600)));
-      roamTimers.push(setTimeout(()=>{ drakeExpr("disappointed"); say(chatBEl,drake,LINES[1]); }, T(350,2500)));
+      roamTimers.push(setTimeout(()=>{ drakeExpr("disappointed"); say(chatBEl,drake,npcReply); }, T(350,2500)));
       roamTimers.push(setTimeout(()=>{
         hushAll(); cinematic=false;
-        classCtl._drakeDone(kind);
-      }, T(1700,4700)));
+        classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
+      }, T(350,2500)+REPLY_LINGER()));
       return;
     }
     /* a real apology: he softens into gratitude — tears stop, touched smile, relief ❤ */
@@ -1861,11 +2061,11 @@ const classCtl={
       reactFloat.classList.remove("go"); void reactFloat.offsetWidth;
       reactFloat.classList.add("go");
     }, T(200,1700)));
-    roamTimers.push(setTimeout(()=>say(chatBEl,drake,LINES[1]), T(350,2300)));
+    roamTimers.push(setTimeout(()=>say(chatBEl,drake,npcReply), T(350,2300)));
     roamTimers.push(setTimeout(()=>{
       hushAll(); reactFloat.classList.remove("go"); reactAnchor=null; cinematic=false;
-      classCtl._drakeDone(kind);
-    }, T(1700,4500)));
+      classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
+    }, T(350,2300)+REPLY_LINGER()));
   },
   startReaction(kind, done){
     dlgOverlayEl.classList.add("reacting");
@@ -2021,17 +2221,20 @@ function cutLoop(){
   AW.renderer.render(AW.scene3,AW.camera);
 }
 function playCut(){
-  const kind = (S.alexResponse==="asked"||S.alexResponse==="warm") ? "happy"
-             : S.alexResponse==="deflect" ? "sadcry" : "sad";
-  const thought = S.alexResponse==="asked"
+  const resp=S.checkinResponse||"ignored";
+  const kind = (resp==="great"||resp==="good") ? "happy"
+             : resp==="bad" ? "sadcry" : "sad"; /* weak or ignored */
+  const thought = resp==="great"
     ? "wow… my friends care about me. I feel loved 🥹"
-    : S.alexResponse==="warm"
+    : resp==="good"
     ? "that helped a bit… still nervous about the test tho."
-    : kind==="sadcry"
+    : resp==="bad"
     ? "she doesn’t care about me… I feel like a burden to my friends."
+    : resp==="weak"
+    ? "guess it’s easier if I just laugh it off too."
     : null; /* ignored: the silence stays unnarrated */
   document.getElementById("cutCaption").textContent =
-    S.alexResponse==="ignored" ? "Alex’s room · seen, no reply" : "Alex’s room · 8:07 AM";
+    resp==="ignored" ? "Alex’s room · seen, no reply" : "Alex’s room · 8:07 AM";
   alexExpr("neutral");
   alexC.rotation.set(0,0,0); alexC.position.y=0.55;
   alexC.userData.mouths.smile.scale.setScalar(1);
@@ -2091,54 +2294,93 @@ function onPcClick(){
   hintVisible=false;
   room3d.walkToDesk(openPostScreen);
 }
-function openPostScreen(){
+function fallbackToday(){
+  return { day_type:"checkin", focus_role_slug:"alex", focus_display_name:"Alex", focus_arc_status:"active" };
+}
+async function fetchToday(){
+  if(!S.playthroughId) return fallbackToday();
+  try{
+    const res=await fetch(`/api/playthroughs/${S.playthroughId}/today`, {
+      headers:{Authorization:"Bearer "+S.authToken}
+    });
+    if(!res.ok) return fallbackToday();
+    return await res.json();
+  }catch(err){ console.error("today fetch failed", err); return fallbackToday(); }
+}
+async function openPostScreen(){
   daySnapshot={coins:S.coins, johnRel:S.johnRel, drakeRel:S.drakeRel, alexRel:S.alexRel};
-  if(S.day>=2){ enterDM(); return; }
-  document.getElementById("pcClock").textContent=`Day ${S.day} · 8:04 AM`;
-  go("sc-post");
+  if(S.day===1){
+    document.getElementById("pcClock").textContent=`Day ${S.day} · 8:04 AM`;
+    go("sc-post");
+    return;
+  }
+  const today = S.todayPromise ? await S.todayPromise : fallbackToday();
+  S.today=today; S.checkinRole=today.focus_role_slug;
+  if(today.day_type==="quiet"){
+    stub(`Quiet day. ${today.focus_display_name} didn’t reach out.`);
+    goHome();
+    return;
+  }
+  enterDM();
 }
 
 /* ================= DAY 2 · DM (two-stage conversation) ================= */
-let dmIgnoreTimer=null, dmSeenEl=null, dmStage=1, dmPath=null;
-const DM_HINT1='demo understands: “same lol” · “are you okay” — AI interpretation coming next build';
+let dmIgnoreTimer=null, dmSeenEl=null, dmStage=1, dmHistory=[];
 function setDmHint(t){
   const h=document.getElementById("dmHint");
-  h.textContent=t; h.style.display="block";
+  h.textContent=t||""; h.style.display=t?"block":"none";
 }
 function dmMsg(text, me){
   const row=document.createElement("div");
   row.className="dm-row"+(me?" me":"");
   row.innerHTML = me
     ? `<div class="dm-bubble">${text}</div>`
-    : `<div class="dm-av">A</div><div class="dm-bubble">${text}</div>`;
+    : `<div class="dm-av">${S.checkinRole[0].toUpperCase()}</div><div class="dm-bubble">${text}</div>`;
   document.getElementById("dmThread").appendChild(row);
   return row;
 }
 function dmTyping(){
   const row=document.createElement("div");
   row.className="dm-row";
-  row.innerHTML=`<div class="dm-av">A</div><div class="dm-typing"><i></i><i></i><i></i></div>`;
+  row.innerHTML=`<div class="dm-av">${S.checkinRole[0].toUpperCase()}</div><div class="dm-typing"><i></i><i></i><i></i></div>`;
   document.getElementById("dmThread").appendChild(row);
   return row;
 }
-function resetDM(){
+function resetDM(openerText){
   clearTimeout(dmIgnoreTimer); dmIgnoreTimer=null;
-  dmStage=1; dmPath=null;
+  dmStage=1; dmHistory=[];
   const th=document.getElementById("dmThread");
   th.innerHTML="";
-  dmMsg("hey… not doing great today tbh", false);
+  dmMsg(openerText, false);
+  dmHistory.push({from:"npc", text:openerText});
   dmSeenEl=document.createElement("div");
   dmSeenEl.className="dm-seen"; dmSeenEl.textContent="Seen 8:05 AM";
   th.appendChild(dmSeenEl);
   const inp=document.getElementById("dmInput");
   inp.value=""; inp.disabled=false;
   document.getElementById("dmBar").classList.remove("hide");
-  setDmHint(DM_HINT1);
+  setDmHint("");
   document.getElementById("dmClose").classList.remove("show");
 }
-function enterDM(){
+const DEFAULT_OPENERS = { alex: "hey… not doing great today tbh" };
+async function enterDM(){
+  const name=dispName(S.checkinRole);
   document.getElementById("dmClock").textContent=`Day ${S.day} · 8:04 AM`;
-  resetDM();
+  document.getElementById("dmUrl").textContent=`chirper.app/messages/${S.checkinRole}`;
+  document.getElementById("dmDay").textContent=`${name} · @${S.checkinRole}.png`;
+  document.getElementById("dmTrendFocus").querySelector("b").textContent=name;
+  let openerText = DEFAULT_OPENERS[S.checkinRole] || "hey… you around?";
+  if(S.playthroughId){
+    try{
+      const res=await fetch(`/api/playthroughs/${S.playthroughId}/opener`, {
+        method:"POST",
+        headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+        body: JSON.stringify({role_slug:S.checkinRole})
+      });
+      if(res.ok){ const data=await res.json(); if(data.opener) openerText=data.opener; }
+    }catch(err){ console.error("opener fetch failed", err); }
+  }
+  resetDM(openerText);
   go("sc-dm");
   /* leave-on-read: cancelled the moment the player starts typing (typing = engaging) */
   dmIgnoreTimer=setTimeout(dmIgnore, 10000);
@@ -2159,124 +2401,75 @@ function dmLockInput(){
   document.getElementById("dmBar").classList.add("hide");
   document.getElementById("dmHint").style.display="none";
 }
-function openStage2(hint){
+function openStage2(){
   dmStage=2;
   const inp=document.getElementById("dmInput");
   inp.value=""; inp.disabled=false;
   document.getElementById("dmBar").classList.remove("hide");
-  setDmHint(hint);
-  /* leaving Alex hanging mid-conversation settles at the partial outcome */
-  dmIgnoreTimer=setTimeout(()=>finalizeDM(dmPath==="asked"?"warm":"deflect"), 12000);
+  setDmHint("");
+  /* leaving Alex hanging mid-conversation settles at a lukewarm, unresolved outcome */
+  dmIgnoreTimer=setTimeout(()=>{
+    finalizeDMResult({npc_reply:"", outcome:"weak", relationship_delta:0, grade:"C"});
+  }, 12000);
 }
-function finalizeDM(kind){
+function finalizeDMResult(result){
   clearTimeout(dmIgnoreTimer); dmIgnoreTimer=null;
-  S.alexResponse=kind;
+  const outcome=result.outcome||"weak";
+  S.checkinResponse=outcome;
+  S.checkinGrade=result.grade||"C";
+  setRelOf(S.checkinRole, applyRelScore(relOf(S.checkinRole), result, "relationship_delta"));
   dmLockInput();
   dmDone();
 }
-function dmSend(){
+async function dmSend(){
   const inp=document.getElementById("dmInput");
   const raw=inp.value.trim();
   if(!raw) return;
   dmEngaged();
-  const norm=raw.toLowerCase().replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim();
-  const ASK=/(are you ok|are u ok|r u ok|you okay|u okay|you ok\b|u ok\b|whats wrong|what happened)/;
-  const SUP=/(that sucks|not dumb|isnt dumb|im here|here for you|wanna talk|want to talk|talk about it|you got this|got your back|itll be ok|it will be ok|ill help|i can help|study together|walk together|walk to school|proud of you|sorry to hear|that sounds hard|sounds rough)/;
-  const JOKE=/(same lol|lol same|lmao|haha|\brip\b|\blol\b)/;
-  let action=null;
-  if(dmStage===1){
-    if(ASK.test(norm)) action="ask";
-    else if(JOKE.test(norm)||norm==="same") action="joke";
-    if(!action){
-      stub('This demo understands “same lol” or “are you okay” — AI interpretation is the next build.');
-      return;
-    }
-  }else{
-    if(SUP.test(norm)||ASK.test(norm)) action="support";
-    else if(JOKE.test(norm)||norm==="same") action="joke";
-    if(!action){
-      stub('Stage 2 understands supportive lines like “that sucks” / “wanna talk about it?” — or “lol” to brush it off.');
-      return;
-    }
-  }
   dmEcho(raw);
+  dmHistory.push({from:"you", text:raw});
   dmLockInput();
   const tp=dmTyping();
   const T=(a,b)=>reduce()?a:b;
   if(dmStage===1){
-    if(action==="ask"){
-      dmPath="asked";
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("idk. bombed the math test and my mom’s been on me about it all week. it’s dumb", false);
-        openStage2('demo understands: “that sucks” · “wanna talk about it?” · “lol”');
-      }, T(200,1300));
-    }else{
-      dmPath="deflect";
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("ha. yeah", false);
-        setTimeout(()=>{
-          const tp2=dmTyping();
-          setTimeout(()=>{
-            tp2.remove();
-            dmMsg("anyway. bombed the math test and mom’s been on me all week. it’s whatever lol", false);
-            openStage2('one more chance — “are you okay” still works');
-          }, T(200,1400));
-        }, T(150,1000));
-      }, T(200,1300));
-    }
+    /* unscored setup turn, display-wise — but still a real judged decision under the
+       hood (logged to events, relationship_score updated), so stage 2 gets real
+       rolling history to react to instead of a client-passed transcript */
+    const fallback={npc_reply:"idk. kind of a rough week tbh", outcome:"weak", relationship_delta:0, grade:"C"};
+    const result=await judgeMove(S.checkinRole, raw, fallback, ()=>checkinStage1Prompt(S.checkinRole));
+    await new Promise(r=>setTimeout(r, T(200,1300)));
+    tp.remove();
+    const reply=result.npc_reply||fallback.npc_reply;
+    dmMsg(reply, false);
+    dmHistory.push({from:"npc", text:reply});
+    openStage2();
     return;
   }
-  /* ---- stage 2 ---- */
-  if(dmPath==="asked"){
-    if(action==="support"){
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("…yeah. okay. it’s not dumb, right?", false);
-        setTimeout(()=>{
-          const tp2=dmTyping();
-          setTimeout(()=>{
-            tp2.remove();
-            dmMsg("thanks. seriously 🙂 walk to school together?", false);
-            finalizeDM("asked");
-          }, T(200,1300));
-        }, T(150,900));
-      }, T(200,1300));
-    }else{
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("lol yeah. anyway", false);
-        finalizeDM("warm");
-      }, T(200,1300));
-    }
-  }else{ /* deflect path — they circled back */
-    if(action==="support"){
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("…oh. uh, kinda? test went really bad", false);
-        setTimeout(()=>{
-          const tp2=dmTyping();
-          setTimeout(()=>{
-            tp2.remove();
-            dmMsg("thanks for circling back tho. means something", false);
-            finalizeDM("warm");
-          }, T(200,1300));
-        }, T(150,900));
-      }, T(200,1300));
-    }else{
-      setTimeout(()=>{
-        tp.remove();
-        dmMsg("lol", false);
-        finalizeDM("deflect");
-      }, T(200,1300));
-    }
-  }
+  /* ---- stage 2: the final AI judgment for this DM ---- */
+  const npcLabel=dispName(S.checkinRole)+": ";
+  const transcript=dmHistory.map(m=>(m.from==="npc"?npcLabel:"Player: ")+m.text).join("\n")+`\nPlayer: ${raw}`;
+  const fallback={npc_reply:"…yeah. thanks I guess.", outcome:"weak", relationship_delta:0, grade:"C"};
+  const result=await judgeMove(S.checkinRole, raw, fallback, ()=>checkinStage2Prompt(S.checkinRole, transcript));
+  await new Promise(r=>setTimeout(r, T(200,1300)));
+  tp.remove();
+  const reply=result.npc_reply||fallback.npc_reply;
+  dmMsg(reply, false);
+  finalizeDMResult(result);
 }
 function dmIgnore(){
-  S.alexResponse="ignored";
+  S.checkinResponse="ignored";
   dmLockInput();
   dmSeenEl.classList.add("show");
+  /* an ignored day still needs to write a real server event — otherwise this NPC
+     never accrues a logged interaction and the day-loop's rotation (which picks
+     whoever's gone longest without one) would just re-pick them forever */
+  if(S.playthroughId){
+    fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
+      method:"POST",
+      headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+      body: JSON.stringify({role_slug:S.checkinRole, day:S.day, player_input:""})
+    }).catch(err=>console.error("ignored-day decision failed", err));
+  }
   setTimeout(()=>{
     document.getElementById("dmClose").textContent="Put the phone down";
     document.getElementById("dmClose").classList.add("show");
@@ -2286,45 +2479,58 @@ function dmDone(){
   setTimeout(()=>{
     document.getElementById("dmClose").textContent="Close Chirper";
     document.getElementById("dmClose").classList.add("show");
-  }, reduce()?200:900);
+  }, REPLY_LINGER());
 }
-function closeDM(){ playCut(); }
+function closeDM(){ S.checkinRole==="alex" ? playCut() : showReflection(); }
 function showReflection(){
-  const key=S.alexResponse||"ignored";
+  const key=S.checkinResponse||"ignored";
+  const name=dispName(S.checkinRole);
   const L={
-    asked:["You noticed.","You walked to school together. Nothing dramatic — that’s the point."],
-    warm:["You showed up — partway.","Alex said thanks. A little more would\u2019ve gone a long way."],
-    deflect:["You made it a joke.","Alex laughed back. Then stopped typing."],
-    ignored:["You left it on read.","The message is still sitting there."]
+    great:[`You showed up for ${name}.`,`${name} actually opened up — and felt a little less alone for it — that’s the point.`],
+    good:[`You showed up — partway.`,`${name} said thanks. A little more would’ve gone a long way.`],
+    weak:[`You kept it light.`,`${name} laughed along. Then stopped typing.`],
+    bad:[`You brushed ${name} off.`,`${name} didn’t say much after that.`],
+    ignored:[`You left it on read.`,`The message is still sitting there.`]
   }[key];
   document.getElementById("reflLine").textContent=L[0];
   document.getElementById("reflSub").textContent=L[1];
-  /* day 2 is graded too — quieter stakes, same report */
-  const R={
-    asked:  {g:"A", cls:"a", pay:75, dRel:+1},
-    warm:   {g:"B", cls:"b", pay:60, dRel:+1},
-    deflect:{g:"C", cls:"c", pay:40, dRel:-1},
-    ignored:{g:"F", cls:"f", pay:25, dRel:-2}
-  }[key];
-  S.alexRel=Math.max(0,Math.min(5,S.alexRel+R.dRel));
-  document.getElementById("gradeSlot2").innerHTML=`<span class="grade ${R.cls}">${R.g}</span>`;
-  document.getElementById("payoutLine2").textContent=`+${R.pay} coins`;
-  setCoins(S.coins+R.pay);
+  document.getElementById("reflEyebrow").textContent=`Day ${S.day} · after school`;
+  /* this day is graded too — the relationship delta was already AI-judged and applied
+     when the conversation finished; "ignored" (no reply sent) uses a flat penalty */
+  let grade, pay;
+  if(key==="ignored"){
+    grade="F"; pay=25;
+    setRelOf(S.checkinRole, Math.max(0,Math.min(5,relOf(S.checkinRole)-2)));
+  }else{
+    grade=S.checkinGrade||"C";
+    pay=PAYOUT_BY_GRADE[grade]||40;
+  }
+  document.getElementById("gradeSlot2").innerHTML=`<span class="grade ${gradeClass(grade)}">${grade}</span>`;
+  document.getElementById("payoutLine2").textContent=`+${pay} coins`;
+  setCoins(S.coins+pay);
   go("sc-reflect");
 }
-function showEnding(){
+async function showEnding(){
   closeShop();
-  document.getElementById("endDay1").textContent=
-    `Day 1 — everyone saw what you posted. You got ${(S.grade==="F"||S.grade==="A")?"an "+S.grade:"a "+S.grade}.`;
-  document.getElementById("endDay2").textContent={
-    asked:"Day 2 — no one saw it. You asked anyway.",
-    warm:"Day 2 — you showed up partway. It still helped.",
-    deflect:"Day 2 — you kept it light. So did Alex.",
-    ignored:"Day 2 — the message is still on read."
-  }[S.alexResponse||"ignored"];
+  document.getElementById("endTitle").textContent=`${S.day} days.`;
   document.getElementById("endCoins").textContent=
     `Coins left over: ${S.coins}. They only ever bought decorations.`;
   go("sc-end");
+
+  const linesEl=document.getElementById("endLines");
+  linesEl.innerHTML=`<div class="sum-line">Tallying how things landed…</div>`;
+  let ending=null;
+  if(S.playthroughId){
+    try{
+      const res=await fetch(`/api/playthroughs/${S.playthroughId}/ending`, {
+        method:"POST", headers:{Authorization:"Bearer "+S.authToken}
+      });
+      if(res.ok) ending=await res.json();
+    }catch(err){ console.error("ending fetch failed", err); }
+  }
+  if(!ending) ending={ overall_line:"You made it through — for better or worse, people noticed.", per_npc:[] };
+  linesEl.innerHTML = [ending.overall_line, ...ending.per_npc.map(p=>`${p.line}${p.grade?` (${p.grade})`:""}`)]
+    .map(line=>`<div class="sum-line">${escHtml(line)}</div>`).join("");
 }
 function selectDraft(n){
   selectedDraft=n;
@@ -2346,6 +2552,10 @@ function enterDialogue(){
   const bubs=document.getElementById("vnBubbles");
   bubs.querySelectorAll(".vn-bubble").forEach(b=>{b.style.animation="none"; void b.offsetWidth; b.style.animation="";});
   const ch=document.getElementById("vnChoices"); ch.classList.remove("show");
+  const johnInp=document.getElementById("johnInput");
+  johnInp.value=""; johnInp.disabled=false;
+  document.getElementById("johnSendBtn").disabled=false;
+  document.getElementById("johnAiStatus").textContent="";
   document.getElementById("dlgOverlay").classList.add("on");
   setTimeout(()=>ch.classList.add("show"), reduce()?100:1900);
 }
@@ -2360,90 +2570,144 @@ function renderHearts(anim){
     wrap.appendChild(d);
   }
 }
-function answer(kind){
+function addVnBubble(text){
+  const wrap=document.getElementById("vnBubbles");
+  const b=document.createElement("div");
+  b.className="vn-bubble";
+  b.textContent=text;
+  wrap.appendChild(b);
+  void b.offsetWidth;
+}
+async function submitJohnAnswer(){
+  const inp=document.getElementById("johnInput");
+  const raw=inp.value.trim();
+  if(!raw) return;
+  const btn=document.getElementById("johnSendBtn");
+  const status=document.getElementById("johnAiStatus");
+  inp.disabled=true; btn.disabled=true;
+  status.textContent="John is reading your reply…";
+  const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
+  const result=await judgeMove("john", raw, fallback, johnSystemPrompt);
+  status.textContent="";
+  answerAI(result);
+}
+function applyRelScore(current, result, deltaField){
+  if(typeof result.relationship_score==="number") return Math.max(0,Math.min(5,Math.round(result.relationship_score)));
+  const delta=typeof result[deltaField]==="number"?Math.round(result[deltaField]):0;
+  return Math.max(0,Math.min(5,current+delta));
+}
+function answerAI(result){
+  const outcome=result.outcome||"weak";
   S._prevRel=S.johnRel;
-  if(kind==="bad") S.johnRel=Math.max(0,S.johnRel-2);
-  else S.johnRel=Math.min(5,S.johnRel+1);
-  renderHearts(kind==="bad"?"crack":"pop");
-  document.querySelectorAll("#vnChoices .vn-choice").forEach(b=>b.disabled=true);
-  /* let the hearts land, then John reacts, then the report card */
+  const nextRel=applyRelScore(S.johnRel, result, "relationship_delta");
+  const delta=nextRel-S.johnRel;
+  S.johnRel=nextRel;
+  S.johnGrade=result.grade||"C";
+  addVnBubble(result.npc_reply||"…");
+  renderHearts(delta<0?"crack":(delta>0?"pop":undefined));
+  /* let the hearts + reply land, then John reacts, then the report card */
   setTimeout(()=>{
-    classCtl.startReaction(kind==="bad"?"bad":"good", ()=>{
+    classCtl.startReaction(outcome==="bad"?"bad":"good", ()=>{
       document.getElementById("dlgOverlay").classList.remove("on");
-      if(kind==="amends"){
+      const finishUp=()=>{
+        document.getElementById("johnInput").disabled=false;
+        document.getElementById("johnSendBtn").disabled=false;
+        classCtl.exit();
+        showSummary(outcome);
+      };
+      if(outcome==="great"){
         /* John reacts first, then the player walks over to Drake in person */
-        classCtl.goToDrake((style)=>{
-          S.apologyStyle=style;
-          document.querySelectorAll(".vn-choice").forEach(b=>b.disabled=false);
-          classCtl.exit();
-          showSummary(kind);
+        classCtl.goToDrake((drakeResult)=>{
+          S.drakeRel=applyRelScore(S.drakeRel, drakeResult, "delta");
+          S.apologyOutcome=drakeResult.outcome||"weak";
+          S.apologyStyle=(drakeResult.outcome==="bad"||drakeResult.outcome==="weak")?"weak":"own";
+          S.apologyGrade=drakeResult.grade||"C";
+          finishUp();
         });
         return;
       }
-      document.querySelectorAll(".vn-choice").forEach(b=>b.disabled=false);
-      classCtl.exit();
-      showSummary(kind);
+      finishUp();
     });
-  }, 350);
+  }, REPLY_LINGER());
 }
-function drakeApologize(kind){ classCtl.drakeAnswer(kind); }
-function showSummary(kind){
+async function submitDrakeApology(){
+  const inp=document.getElementById("drakeInput");
+  const raw=inp.value.trim();
+  if(!raw) return;
+  const btn=document.getElementById("drakeSendBtn");
+  const status=document.getElementById("drakeAiStatus");
+  inp.disabled=true; btn.disabled=true;
+  status.textContent="Drake is listening…";
+  const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
+  const result=await judgeMove("drake", raw, fallback, drakeSystemPrompt);
+  status.textContent="";
+  document.getElementById("drakeDlg").classList.remove("on");
+  document.getElementById("drakeChoices").classList.remove("show");
+  classCtl.drakeAnswerAI(result, raw);
+}
+function showSummary(outcome){
   const lines=document.getElementById("sumLines");
   const gradeSlot=document.getElementById("gradeSlot");
   const payout=document.getElementById("payoutLine");
-  /* how the day landed with Drake */
-  const dDelta = kind==="bad" ? -2
-               : kind==="good" ? -1
-               : S.apologyStyle==="weak" ? -1 : +1;
-  S.drakeRel=Math.max(0,Math.min(5,S.drakeRel+dDelta));
-  if(kind==="bad"){
-    S.grade="F";
-    lines.innerHTML=`<div class="sum-line">John hates you.</div>
-      <div class="sum-line">Drake is sad.</div>
-      <div class="sum-line">Your post is still up. Everyone saw it.</div>`;
-    gradeSlot.innerHTML=`<span class="grade f">F</span>`;
-    payout.textContent="+25 coins";
-    setCoins(S.coins+25);
-  }else if(kind==="amends"){
-    if(S.apologyStyle==="weak"){
-      S.grade="C";
-      lines.innerHTML=`<div class="sum-line">You walked all the way over… to say “if”.</div>
-        <div class="sum-line">A sorry with conditions isn’t an apology — Drake left more hurt than before.</div>
-        <div class="sum-line">Showing up only counts if you own it when you get there.</div>`;
-      gradeSlot.innerHTML=`<span class="grade c">C</span>`;
-      payout.textContent="+40 coins";
-      setCoins(S.coins+40);
-    }else{
-      S.grade="A";
-      lines.innerHTML=`<div class="sum-line">${S.apologyStyle==="own"
-          ?"You owned it — no excuses, and the post is coming down."
-          :"You checked on Drake in person."}</div>
-        <div class="sum-line">He feels a little less alone.</div>
-        <div class="sum-line">John respects you for it. Words hurt in public — repair works best face to face.</div>`;
-      gradeSlot.innerHTML=`<span class="grade a">A</span>`;
-      payout.textContent="+75 coins";
-      setCoins(S.coins+75);
-    }
-  }else{
-    S.grade="C+";
-    lines.innerHTML=`<div class="sum-line">John respects the apology.</div>
-      <div class="sum-line">Drake is still hurt — check on him tomorrow.</div>
-      <div class="sum-line">An apology isn’t an eraser. But it’s a start.</div>`;
-    gradeSlot.innerHTML=`<span class="grade c">C+</span>`;
-    payout.textContent="+50 coins";
-    setCoins(S.coins+50);
+  /* "great" sends the player to apologize to Drake in person — that in-person
+     judgment call (if it happened) is what the day's outcome actually resolves on */
+  const visited = outcome==="great" && S.apologyOutcome;
+  const resolving = visited ? S.apologyOutcome : outcome;
+  if(!visited){
+    /* no in-person visit — Drake only feels the fallout of the public post/reply */
+    const dDelta = outcome==="bad" ? -2 : outcome==="weak" ? -1 : outcome==="good" ? -1 : 0;
+    S.drakeRel=Math.max(0,Math.min(5,S.drakeRel+dDelta));
   }
+  const grade = visited ? (S.apologyGrade||"C") : (S.johnGrade||"C");
+  S.grade=grade;
+  const COPY={
+    bad:  ["John didn’t buy it.", "Drake is still hurt by what you posted.", "Your post is still up. Everyone saw it."],
+    weak: ["That didn’t really land as an apology.", "A sorry with conditions isn’t an apology — Drake left more hurt than before.", "Owning it matters more than half-explaining it."],
+    good: ["John respects the apology.", "Drake is still hurt — check on him tomorrow.", "An apology isn’t an eraser. But it’s a start."],
+    great:["You owned it — no excuses.", "He feels a little less alone.", "Words hurt in public — repair works best face to face."]
+  };
+  const copy=COPY[resolving]||COPY.weak;
+  lines.innerHTML=copy.map(t=>`<div class="sum-line">${t}</div>`).join("");
+  const pay=PAYOUT_BY_GRADE[grade]||40;
+  gradeSlot.innerHTML=`<span class="grade ${gradeClass(grade)}">${grade}</span>`;
+  payout.textContent=`+${pay} coins`;
+  setCoins(S.coins+pay);
   go("sc-summary");
 }
-function retryDay(){
+/* Undoes the retried day server-side too — deletes that day's logged events and
+   recomputes relationship_score from what's left, so a retry can't leave the
+   backend thinking a decision happened that the player just rewound. Without
+   this, hearts would look reset locally while the server (and any future
+   reflection reading its event log) still remembered the "undone" attempt. */
+async function syncRelFromServer(day){
+  if(!S.playthroughId) return;
+  try{
+    const res = await fetch(`/api/playthroughs/${S.playthroughId}/retry-day`, {
+      method:"POST",
+      headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+      body: JSON.stringify({day})
+    });
+    if(!res.ok){ console.error("retry-day sync failed", res.status); return; }
+    const data=await res.json();
+    (data.assignments||[]).forEach(a=>{
+      if(S.assignments) S.assignments[a.role_slug]=a;
+      const rounded=Math.max(0,Math.min(5,Math.round(a.relationship_score)));
+      setRelOf(a.role_slug, rounded);
+    });
+  }catch(err){ console.error("retry-day sync failed", err); }
+}
+async function retryDay(){
   if(S.day>=2){
-    S.alexResponse=null;
-    setCoins(daySnapshot.coins); S.alexRel=daySnapshot.alexRel;
+    S.checkinResponse=null;
+    await syncRelFromServer(S.day);
+    setCoins(daySnapshot ? daySnapshot.coins : S.coins);
     stub("Morning rewound.");
     enterDM();
     return;
   }
-  setCoins(daySnapshot.coins); S.johnRel=daySnapshot.johnRel; S.drakeRel=daySnapshot.drakeRel;
+  await syncRelFromServer(S.day);
+  setCoins(daySnapshot.coins);
+  S.apologyStyle=null; S.apologyOutcome=null; S.johnGrade=null; S.apologyGrade=null; S.grade=null;
   stub("Day rewound. (Free retry is a spec Q2 default — decide if it should cost something.)");
   resetComposer();
   go("sc-post");
@@ -2483,6 +2747,12 @@ function openBoard(){
   const label = pct>=80?`Golden · ${pct}%` : pct>=60?`Kind · ${pct}%` : pct>=40?`Getting there · ${pct}%` : `Rough · ${pct}%`;
   document.getElementById("kindLabel").textContent=label;
   document.getElementById("kindFill").style.width=pct+"%";
+  const feedEl=document.getElementById("boardFeed");
+  feedEl.innerHTML = S.feedPosts.length
+    ? `<div class="fhead">Chirper</div>` + S.feedPosts.slice(0,5).map(p=>
+        `<div class="feed-post"><b>${escHtml(p.display_name)}</b>: ${escHtml(p.text)}<span class="fday">Day ${escHtml(p.day)}</span></div>`
+      ).join("")
+    : "";
   document.getElementById("board").classList.add("open");
 }
 function closeBoard(){ document.getElementById("board").classList.remove("open"); }
@@ -2511,11 +2781,15 @@ function buy(item,cost){
 }
 function startGame(){
   stageEl.classList.remove("titlemode");
+  ensurePlaythrough(); /* fire-and-forget — judgeMove() awaits this again when actually needed */
   startMorning();
 }
 function resetAll(){
   Object.assign(S,{day:1,coins:0,johnRel:3,drakeRel:3,alexRel:3,ownsFlower:false,ownsTeddy:false,
-                   ownsRug:false,ownsPosters:false,postChoice:0,alexResponse:null,grade:null,apologyStyle:null});
+                   ownsRug:false,ownsPosters:false,postChoice:0,checkinResponse:null,grade:null,apologyStyle:null,
+                   johnGrade:null,apologyGrade:null,apologyOutcome:null,checkinGrade:null,
+                   checkinRole:null, today:null, todayPromise:null,
+                   playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[]});
   closeBoard();
   setCoins(0);
   room3d.setFlower(false); room3d.setTeddy(false);
@@ -2527,8 +2801,8 @@ function resetAll(){
   stageEl.classList.add("titlemode");
   go("sc-title");
 }
-Object.assign(window,{openShop,closeShop,openBoard,closeBoard,buy,goToBed,drakeApologize,retryDay,goHome,answer,selectDraft,postNow,stub,resetAll,
-                      startGame,dmSend,dmEngaged,closeDM,skipCut});
+Object.assign(window,{openShop,closeShop,openBoard,closeBoard,buy,goToBed,submitDrakeApology,retryDay,goHome,submitJohnAnswer,selectDraft,postNow,stub,resetAll,
+                      startGame,dmSend,dmEngaged,closeDM,skipCut,S});
 stageEl.classList.add("titlemode");
 setDayChip("Day 1 · Morning");
 </script>
