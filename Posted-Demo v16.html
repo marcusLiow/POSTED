@@ -741,7 +741,7 @@
               Chirper — Messages
             </div>
           </div>
-          <div class="urlbar"><span class="url">chirper.app/messages/alex</span></div>
+          <div class="urlbar"><span class="url" id="dmUrl">chirper.app/messages/alex</span></div>
           <div class="chirper">
             <nav class="ch-nav">
               <div class="ch-logo">
@@ -755,7 +755,7 @@
               <div class="ch-me"><div class="av"></div><div>you<small>@you_irl</small></div></div>
             </nav>
             <main class="ch-feed">
-              <div class="dm-day">Alex · @alex.png</div>
+              <div class="dm-day" id="dmDay">Alex · @alex.png</div>
               <div id="dmThread"></div>
               <div class="dm-inputbar" id="dmBar">
                 <input class="dm-input" id="dmInput" type="text" maxlength="80"
@@ -768,7 +768,7 @@
             </main>
             <aside class="ch-trends">
               <h3>Messages</h3>
-              <div class="trend"><b>Alex</b><span>now</span></div>
+              <div class="trend" id="dmTrendFocus"><b>Alex</b><span>now</span></div>
               <div class="trend"><b>John</b><span>yesterday</span></div>
               <div class="trend"><b>study grp 📚</b><span>2d</span></div>
             </aside>
@@ -794,7 +794,7 @@
   <section class="scene" id="sc-reflect">
     <div class="panel-wrap">
       <div class="panel">
-        <div class="eyebrow">Day 2 · after school</div>
+        <div class="eyebrow" id="reflEyebrow">Day 2 · after school</div>
         <h1 id="reflLine">You noticed.</h1>
         <p class="sub" id="reflSub" style="margin-top:8px"></p>
         <div id="gradeSlot2"></div>
@@ -812,12 +812,8 @@
     <div class="panel-wrap">
       <div class="panel">
         <div class="eyebrow">Posted · demo</div>
-        <h1>Two days.</h1>
-        <div class="sum-lines">
-          <div class="sum-line" id="endDay1"></div>
-          <div class="sum-line" id="endDay2"></div>
-          <div class="sum-line">One was public. One wasn’t. Both counted.</div>
-        </div>
+        <h1 id="endTitle">Two days.</h1>
+        <div class="sum-lines" id="endLines"></div>
         <p class="sub" id="endCoins" style="margin-top:10px"></p>
         <div class="btnrow">
           <button class="btn" onclick="resetAll()">Restart demo</button>
@@ -914,11 +910,16 @@ class RoundedBoxGeometry extends THREE.BoxGeometry{
 <script>
 
 /* ================= STATE ================= */
+const TOTAL_DAYS = 7; // Day 1 is the fixed John/Drake cold-open; day TOTAL_DAYS's bedtime ends the game.
 const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, ownsTeddy:false,
-            ownsRug:false, ownsPosters:false, postChoice:0, alexResponse:null, grade:null, apologyStyle:null,
-            johnGrade:null, apologyGrade:null, apologyOutcome:null, alexGrade:null,
+            ownsRug:false, ownsPosters:false, postChoice:0, checkinResponse:null, grade:null, apologyStyle:null,
+            johnGrade:null, apologyGrade:null, apologyOutcome:null, checkinGrade:null,
+            checkinRole:null, today:null, todayPromise:null,
             playthroughId:null, authToken:null, assignments:null, feedPosts:[] };
 let daySnapshot = null, selectedDraft = 0;
+function relOf(slug){ return S[slug+"Rel"]; }
+function setRelOf(slug, v){ S[slug+"Rel"] = v; }
+const escHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const reduce = ()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ================= AI JUDGE (open-ended input, live Anthropic call) =================
@@ -1044,26 +1045,30 @@ Decide:
 - grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
 ${JSON_SPEC}`;
 }
-function alexStage1Prompt(){
-  return `You are voicing Alex in a teen social-app DM, in a game called Posted. Alex is anxious, wants closeness, notices quickly when he's being brushed off, but is easily reassured by even a little genuine attention.
-CONTEXT: Alex just opened the DM with "hey… not doing great today tbh". The truth, which Alex is a little guarded about, is that he bombed a math test and his mom has been on him about it all week.
-CURRENT RELATIONSHIP: Alex's closeness to the player is ${S.alexRel}/5.
-TASK: read the player's exact reply below and write Alex's next DM message, in his own voice (lowercase, casual, a little anxious — like real texting).
-- If the reply shows genuine curiosity or care (asking what's wrong, checking in), have Alex open up and reveal the math test / mom situation.
-- If the reply is dismissive, jokey, or brushes past it, have Alex respond guardedly or a little hurt in one short line, without lecturing the player — he's still a teenager texting, not narrating his own feelings.
+function dispName(roleSlug){
+  return S.assignments?.[roleSlug]?.display_name || (roleSlug[0].toUpperCase()+roleSlug.slice(1));
+}
+function checkinStage1Prompt(roleSlug){
+  const name=dispName(roleSlug);
+  return `You are voicing ${name} in a teen social-app DM, in a game called Posted. ${name} is checking in on the player, a little anxious, and is easily reassured by even a little genuine attention.
+CURRENT RELATIONSHIP: ${name}'s closeness to the player is ${relOf(roleSlug)}/5.
+TASK: read the player's exact reply below and write ${name}'s next DM message, in their own voice (lowercase, casual — like real texting).
+- If the reply shows genuine curiosity or care (asking what's wrong, checking in), have ${name} open up a little more.
+- If the reply is dismissive, jokey, or brushes past it, have ${name} respond guardedly or a little hurt in one short line, without lecturing the player — they're still a teenager texting, not narrating their own feelings.
 Judge the substance and tone of what they actually wrote, not fixed keywords.
 Respond with STRICT JSON only: {"npc_reply":"..."}`;
 }
-function alexStage2Prompt(transcript){
-  return `You are voicing Alex in a teen social-app DM, in a game called Posted. Alex is anxious, wants closeness, notices quickly when he's being brushed off, but is easily reassured by even a little genuine attention.
+function checkinStage2Prompt(roleSlug, transcript){
+  const name=dispName(roleSlug);
+  return `You are voicing ${name} in a teen social-app DM, in a game called Posted. ${name} is checking in on the player, a little anxious, and is easily reassured by even a little genuine attention.
 CONVERSATION SO FAR:
 ${transcript}
-CURRENT RELATIONSHIP: Alex's closeness to the player is ${S.alexRel}/5.
-TASK: read the player's final reply (the last "Player:" line) in light of the whole conversation, and judge holistically whether the player showed up for Alex, even a little — tone, sincerity, whether they responded to how Alex is actually feeling. Don't keyword-match; judge substance and spirit.
+CURRENT RELATIONSHIP: ${name}'s closeness to the player is ${relOf(roleSlug)}/5.
+TASK: read the player's final reply (the last "Player:" line) in light of the whole conversation, and judge holistically whether the player showed up for ${name}, even a little — tone, sincerity, whether they responded to how ${name} is actually feeling. Don't keyword-match; judge substance and spirit.
 Decide:
-- outcome: "bad" (dismissive, ignored his feelings), "weak" (kept it surface-level / joked it off), "good" (showed some real care), or "great" (genuinely showed up for him)
-- npc_reply: Alex's short final in-character DM reply
-- relationship_delta: -2 to +2, weighing that Alex is already at ${S.alexRel}/5 closeness
+- outcome: "bad" (dismissive, ignored their feelings), "weak" (kept it surface-level / joked it off), "good" (showed some real care), or "great" (genuinely showed up for them)
+- npc_reply: ${name}'s short final in-character DM reply
+- relationship_delta: -2 to +2, weighing that ${name} is already at ${relOf(roleSlug)}/5 closeness
 - grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
 ${JSON_SPEC}`;
 }
@@ -1505,10 +1510,11 @@ function goToBed(){
   };
 }
 function finishSleep(){
-  if(S.day>=2){ showEnding(); return; }
+  if(S.day>=TOTAL_DAYS){ showEnding(); return; }
   S.day++;
   resetComposer();
   stub("Zzz… a new day.");
+  S.todayPromise=fetchToday();
   /* per npc-swarm-agents-design.md: the day-over moment fires one reflective pass
      per NPC (isolated, best-effort) — fire-and-forget so it never blocks the
      morning transition; a shifted arc surfaces as a toast if one comes back. */
@@ -2215,7 +2221,7 @@ function cutLoop(){
   AW.renderer.render(AW.scene3,AW.camera);
 }
 function playCut(){
-  const resp=S.alexResponse||"ignored";
+  const resp=S.checkinResponse||"ignored";
   const kind = (resp==="great"||resp==="good") ? "happy"
              : resp==="bad" ? "sadcry" : "sad"; /* weak or ignored */
   const thought = resp==="great"
@@ -2288,11 +2294,34 @@ function onPcClick(){
   hintVisible=false;
   room3d.walkToDesk(openPostScreen);
 }
-function openPostScreen(){
+function fallbackToday(){
+  return { day_type:"checkin", focus_role_slug:"alex", focus_display_name:"Alex", focus_arc_status:"active" };
+}
+async function fetchToday(){
+  if(!S.playthroughId) return fallbackToday();
+  try{
+    const res=await fetch(`/api/playthroughs/${S.playthroughId}/today`, {
+      headers:{Authorization:"Bearer "+S.authToken}
+    });
+    if(!res.ok) return fallbackToday();
+    return await res.json();
+  }catch(err){ console.error("today fetch failed", err); return fallbackToday(); }
+}
+async function openPostScreen(){
   daySnapshot={coins:S.coins, johnRel:S.johnRel, drakeRel:S.drakeRel, alexRel:S.alexRel};
-  if(S.day>=2){ enterDM(); return; }
-  document.getElementById("pcClock").textContent=`Day ${S.day} · 8:04 AM`;
-  go("sc-post");
+  if(S.day===1){
+    document.getElementById("pcClock").textContent=`Day ${S.day} · 8:04 AM`;
+    go("sc-post");
+    return;
+  }
+  const today = S.todayPromise ? await S.todayPromise : fallbackToday();
+  S.today=today; S.checkinRole=today.focus_role_slug;
+  if(today.day_type==="quiet"){
+    stub(`Quiet day. ${today.focus_display_name} didn’t reach out.`);
+    goHome();
+    return;
+  }
+  enterDM();
 }
 
 /* ================= DAY 2 · DM (two-stage conversation) ================= */
@@ -2306,25 +2335,24 @@ function dmMsg(text, me){
   row.className="dm-row"+(me?" me":"");
   row.innerHTML = me
     ? `<div class="dm-bubble">${text}</div>`
-    : `<div class="dm-av">A</div><div class="dm-bubble">${text}</div>`;
+    : `<div class="dm-av">${S.checkinRole[0].toUpperCase()}</div><div class="dm-bubble">${text}</div>`;
   document.getElementById("dmThread").appendChild(row);
   return row;
 }
 function dmTyping(){
   const row=document.createElement("div");
   row.className="dm-row";
-  row.innerHTML=`<div class="dm-av">A</div><div class="dm-typing"><i></i><i></i><i></i></div>`;
+  row.innerHTML=`<div class="dm-av">${S.checkinRole[0].toUpperCase()}</div><div class="dm-typing"><i></i><i></i><i></i></div>`;
   document.getElementById("dmThread").appendChild(row);
   return row;
 }
-function resetDM(){
+function resetDM(openerText){
   clearTimeout(dmIgnoreTimer); dmIgnoreTimer=null;
   dmStage=1; dmHistory=[];
   const th=document.getElementById("dmThread");
   th.innerHTML="";
-  const opener="hey… not doing great today tbh";
-  dmMsg(opener, false);
-  dmHistory.push({from:"alex", text:opener});
+  dmMsg(openerText, false);
+  dmHistory.push({from:"npc", text:openerText});
   dmSeenEl=document.createElement("div");
   dmSeenEl.className="dm-seen"; dmSeenEl.textContent="Seen 8:05 AM";
   th.appendChild(dmSeenEl);
@@ -2334,9 +2362,25 @@ function resetDM(){
   setDmHint("");
   document.getElementById("dmClose").classList.remove("show");
 }
-function enterDM(){
+const DEFAULT_OPENERS = { alex: "hey… not doing great today tbh" };
+async function enterDM(){
+  const name=dispName(S.checkinRole);
   document.getElementById("dmClock").textContent=`Day ${S.day} · 8:04 AM`;
-  resetDM();
+  document.getElementById("dmUrl").textContent=`chirper.app/messages/${S.checkinRole}`;
+  document.getElementById("dmDay").textContent=`${name} · @${S.checkinRole}.png`;
+  document.getElementById("dmTrendFocus").querySelector("b").textContent=name;
+  let openerText = DEFAULT_OPENERS[S.checkinRole] || "hey… you around?";
+  if(S.playthroughId){
+    try{
+      const res=await fetch(`/api/playthroughs/${S.playthroughId}/opener`, {
+        method:"POST",
+        headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+        body: JSON.stringify({role_slug:S.checkinRole})
+      });
+      if(res.ok){ const data=await res.json(); if(data.opener) openerText=data.opener; }
+    }catch(err){ console.error("opener fetch failed", err); }
+  }
+  resetDM(openerText);
   go("sc-dm");
   /* leave-on-read: cancelled the moment the player starts typing (typing = engaging) */
   dmIgnoreTimer=setTimeout(dmIgnore, 10000);
@@ -2371,9 +2415,9 @@ function openStage2(){
 function finalizeDMResult(result){
   clearTimeout(dmIgnoreTimer); dmIgnoreTimer=null;
   const outcome=result.outcome||"weak";
-  S.alexResponse=outcome;
-  S.alexGrade=result.grade||"C";
-  S.alexRel=applyRelScore(S.alexRel, result, "relationship_delta");
+  S.checkinResponse=outcome;
+  S.checkinGrade=result.grade||"C";
+  setRelOf(S.checkinRole, applyRelScore(relOf(S.checkinRole), result, "relationship_delta"));
   dmLockInput();
   dmDone();
 }
@@ -2391,20 +2435,21 @@ async function dmSend(){
     /* unscored setup turn, display-wise — but still a real judged decision under the
        hood (logged to events, relationship_score updated), so stage 2 gets real
        rolling history to react to instead of a client-passed transcript */
-    const fallback={npc_reply:"idk. bombed the math test and my mom’s been on me about it all week. it’s dumb", outcome:"weak", relationship_delta:0, grade:"C"};
-    const result=await judgeMove("alex", raw, fallback, alexStage1Prompt);
+    const fallback={npc_reply:"idk. kind of a rough week tbh", outcome:"weak", relationship_delta:0, grade:"C"};
+    const result=await judgeMove(S.checkinRole, raw, fallback, ()=>checkinStage1Prompt(S.checkinRole));
     await new Promise(r=>setTimeout(r, T(200,1300)));
     tp.remove();
     const reply=result.npc_reply||fallback.npc_reply;
     dmMsg(reply, false);
-    dmHistory.push({from:"alex", text:reply});
+    dmHistory.push({from:"npc", text:reply});
     openStage2();
     return;
   }
   /* ---- stage 2: the final AI judgment for this DM ---- */
-  const transcript=dmHistory.map(m=>(m.from==="alex"?"Alex: ":"Player: ")+m.text).join("\n")+`\nPlayer: ${raw}`;
+  const npcLabel=dispName(S.checkinRole)+": ";
+  const transcript=dmHistory.map(m=>(m.from==="npc"?npcLabel:"Player: ")+m.text).join("\n")+`\nPlayer: ${raw}`;
   const fallback={npc_reply:"…yeah. thanks I guess.", outcome:"weak", relationship_delta:0, grade:"C"};
-  const result=await judgeMove("alex", raw, fallback, ()=>alexStage2Prompt(transcript));
+  const result=await judgeMove(S.checkinRole, raw, fallback, ()=>checkinStage2Prompt(S.checkinRole, transcript));
   await new Promise(r=>setTimeout(r, T(200,1300)));
   tp.remove();
   const reply=result.npc_reply||fallback.npc_reply;
@@ -2412,9 +2457,19 @@ async function dmSend(){
   finalizeDMResult(result);
 }
 function dmIgnore(){
-  S.alexResponse="ignored";
+  S.checkinResponse="ignored";
   dmLockInput();
   dmSeenEl.classList.add("show");
+  /* an ignored day still needs to write a real server event — otherwise this NPC
+     never accrues a logged interaction and the day-loop's rotation (which picks
+     whoever's gone longest without one) would just re-pick them forever */
+  if(S.playthroughId){
+    fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
+      method:"POST",
+      headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+      body: JSON.stringify({role_slug:S.checkinRole, day:S.day, player_input:""})
+    }).catch(err=>console.error("ignored-day decision failed", err));
+  }
   setTimeout(()=>{
     document.getElementById("dmClose").textContent="Put the phone down";
     document.getElementById("dmClose").classList.add("show");
@@ -2426,26 +2481,28 @@ function dmDone(){
     document.getElementById("dmClose").classList.add("show");
   }, REPLY_LINGER());
 }
-function closeDM(){ playCut(); }
+function closeDM(){ S.checkinRole==="alex" ? playCut() : showReflection(); }
 function showReflection(){
-  const key=S.alexResponse||"ignored";
+  const key=S.checkinResponse||"ignored";
+  const name=dispName(S.checkinRole);
   const L={
-    great:["You showed up for him.","Alex actually opened up — and felt a little less alone for it — that’s the point."],
-    good:["You showed up — partway.","Alex said thanks. A little more would\u2019ve gone a long way."],
-    weak:["You kept it light.","Alex laughed along. Then stopped typing."],
-    bad:["You brushed him off.","Alex didn’t say much after that."],
-    ignored:["You left it on read.","The message is still sitting there."]
+    great:[`You showed up for ${name}.`,`${name} actually opened up — and felt a little less alone for it — that’s the point.`],
+    good:[`You showed up — partway.`,`${name} said thanks. A little more would’ve gone a long way.`],
+    weak:[`You kept it light.`,`${name} laughed along. Then stopped typing.`],
+    bad:[`You brushed ${name} off.`,`${name} didn’t say much after that.`],
+    ignored:[`You left it on read.`,`The message is still sitting there.`]
   }[key];
   document.getElementById("reflLine").textContent=L[0];
   document.getElementById("reflSub").textContent=L[1];
-  /* day 2 is graded too — the relationship delta was already AI-judged and applied
+  document.getElementById("reflEyebrow").textContent=`Day ${S.day} · after school`;
+  /* this day is graded too — the relationship delta was already AI-judged and applied
      when the conversation finished; "ignored" (no reply sent) uses a flat penalty */
   let grade, pay;
   if(key==="ignored"){
     grade="F"; pay=25;
-    S.alexRel=Math.max(0,Math.min(5,S.alexRel-2));
+    setRelOf(S.checkinRole, Math.max(0,Math.min(5,relOf(S.checkinRole)-2)));
   }else{
-    grade=S.alexGrade||"C";
+    grade=S.checkinGrade||"C";
     pay=PAYOUT_BY_GRADE[grade]||40;
   }
   document.getElementById("gradeSlot2").innerHTML=`<span class="grade ${gradeClass(grade)}">${grade}</span>`;
@@ -2453,20 +2510,27 @@ function showReflection(){
   setCoins(S.coins+pay);
   go("sc-reflect");
 }
-function showEnding(){
+async function showEnding(){
   closeShop();
-  document.getElementById("endDay1").textContent=
-    `Day 1 — everyone saw what you posted. You got ${(S.grade==="F"||S.grade==="A")?"an "+S.grade:"a "+S.grade}.`;
-  document.getElementById("endDay2").textContent={
-    great:"Day 2 — you showed up for him, and it mattered.",
-    good:"Day 2 — you showed up partway. It still helped.",
-    weak:"Day 2 — you kept it light. So did Alex.",
-    bad:"Day 2 — you brushed him off.",
-    ignored:"Day 2 — the message is still on read."
-  }[S.alexResponse||"ignored"];
+  document.getElementById("endTitle").textContent=`${S.day} days.`;
   document.getElementById("endCoins").textContent=
     `Coins left over: ${S.coins}. They only ever bought decorations.`;
   go("sc-end");
+
+  const linesEl=document.getElementById("endLines");
+  linesEl.innerHTML=`<div class="sum-line">Tallying how things landed…</div>`;
+  let ending=null;
+  if(S.playthroughId){
+    try{
+      const res=await fetch(`/api/playthroughs/${S.playthroughId}/ending`, {
+        method:"POST", headers:{Authorization:"Bearer "+S.authToken}
+      });
+      if(res.ok) ending=await res.json();
+    }catch(err){ console.error("ending fetch failed", err); }
+  }
+  if(!ending) ending={ overall_line:"You made it through — for better or worse, people noticed.", per_npc:[] };
+  linesEl.innerHTML = [ending.overall_line, ...ending.per_npc.map(p=>`${p.line}${p.grade?` (${p.grade})`:""}`)]
+    .map(line=>`<div class="sum-line">${escHtml(line)}</div>`).join("");
 }
 function selectDraft(n){
   selectedDraft=n;
@@ -2628,15 +2692,13 @@ async function syncRelFromServer(day){
     (data.assignments||[]).forEach(a=>{
       if(S.assignments) S.assignments[a.role_slug]=a;
       const rounded=Math.max(0,Math.min(5,Math.round(a.relationship_score)));
-      if(a.role_slug==="john") S.johnRel=rounded;
-      if(a.role_slug==="drake") S.drakeRel=rounded;
-      if(a.role_slug==="alex") S.alexRel=rounded;
+      setRelOf(a.role_slug, rounded);
     });
   }catch(err){ console.error("retry-day sync failed", err); }
 }
 async function retryDay(){
   if(S.day>=2){
-    S.alexResponse=null;
+    S.checkinResponse=null;
     await syncRelFromServer(S.day);
     setCoins(daySnapshot ? daySnapshot.coins : S.coins);
     stub("Morning rewound.");
@@ -2686,10 +2748,9 @@ function openBoard(){
   document.getElementById("kindLabel").textContent=label;
   document.getElementById("kindFill").style.width=pct+"%";
   const feedEl=document.getElementById("boardFeed");
-  const escHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   feedEl.innerHTML = S.feedPosts.length
     ? `<div class="fhead">Chirper</div>` + S.feedPosts.slice(0,5).map(p=>
-        `<div class="feed-post"><b>${escHtml(p.display_name)}</b>: ${escHtml(p.text)}<span class="fday">Day ${p.day}</span></div>`
+        `<div class="feed-post"><b>${escHtml(p.display_name)}</b>: ${escHtml(p.text)}<span class="fday">Day ${escHtml(p.day)}</span></div>`
       ).join("")
     : "";
   document.getElementById("board").classList.add("open");
@@ -2725,8 +2786,9 @@ function startGame(){
 }
 function resetAll(){
   Object.assign(S,{day:1,coins:0,johnRel:3,drakeRel:3,alexRel:3,ownsFlower:false,ownsTeddy:false,
-                   ownsRug:false,ownsPosters:false,postChoice:0,alexResponse:null,grade:null,apologyStyle:null,
-                   johnGrade:null,apologyGrade:null,apologyOutcome:null,alexGrade:null,
+                   ownsRug:false,ownsPosters:false,postChoice:0,checkinResponse:null,grade:null,apologyStyle:null,
+                   johnGrade:null,apologyGrade:null,apologyOutcome:null,checkinGrade:null,
+                   checkinRole:null, today:null, todayPromise:null,
                    playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[]});
   closeBoard();
   setCoins(0);

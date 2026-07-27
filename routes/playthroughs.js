@@ -2,7 +2,7 @@ const express = require("express");
 const { query } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { matchPersonasForPlaythrough } = require("../matching");
-const { judge } = require("../judge");
+const { judge, opener, endingSummary, ENDING_FALLBACK } = require("../judge");
 const { runNpcReflection } = require("../reflection");
 
 const router = express.Router();
@@ -234,6 +234,175 @@ router.post("/:id/retry-day", async (req, res) => {
   } catch (err) {
     console.error("[posted] retry-day failed:", err.message);
     res.status(500).json({ error: "retry-day failed" });
+  }
+});
+
+// Repeating day-loop driver: computes, purely from existing events/npc_agent_state
+// (no new schema), which assigned role has gone longest without a real judged
+// interaction — that's today's focus — and whether today should be a full check-in
+// or a quiet pacing day. On Day 2 this reproduces the old hardcoded "Day 2 = Alex"
+// behavior for free, since John/Drake already have a Day-1 event and Alex doesn't.
+router.get("/:id/today", async (req, res) => {
+  try {
+    const playthrough = await loadOwnedPlaythrough(req, res);
+    if (!playthrough) return;
+
+    const { rows: candidates } = await query(
+      `SELECT r.slug AS role_slug, r.display_name, pa.role_id,
+              COALESCE(MAX(e.day), 0) AS last_day
+       FROM persona_assignments pa
+       JOIN roles r ON r.id = pa.role_id
+       LEFT JOIN events e ON e.playthrough_id = pa.playthrough_id
+         AND e.role_id = pa.role_id AND e.scope = 'private_interaction' AND e.outcome IS NOT NULL
+       WHERE pa.playthrough_id = $1
+       GROUP BY r.slug, r.display_name, pa.role_id
+       ORDER BY last_day ASC, r.slug ASC
+       LIMIT 1`,
+      [playthrough.id]
+    );
+    const focus = candidates[0];
+    if (!focus) return res.status(404).json({ error: "no persona assignments for this playthrough" });
+
+    const { rows: stateRows } = await query(
+      "SELECT arc_status FROM npc_agent_state WHERE playthrough_id = $1 AND role_id = $2",
+      [playthrough.id, focus.role_id]
+    );
+    const arcStatus = stateRows[0]?.arc_status || "active";
+    const dayType = (playthrough.current_day % 3 === 0 || arcStatus === "broken") ? "quiet" : "checkin";
+
+    res.json({
+      day: playthrough.current_day,
+      day_type: dayType,
+      focus_role_slug: focus.role_slug,
+      focus_display_name: focus.display_name,
+      focus_arc_status: arcStatus
+    });
+  } catch (err) {
+    console.error("[posted] today failed:", err.message);
+    res.status(500).json({ error: "today failed" });
+  }
+});
+
+function buildOpenerPrompt({ role, persona, events, agentState }) {
+  const traits = `Personality: ${persona.personality.join(", ")}. Values: ${persona.values_.join(", ")}. Interests: ${persona.interests.join(", ")}.`;
+  const history = events.length
+    ? events.map((e) => `Day ${e.day}: player said "${e.player_input}" — you judged it "${e.outcome}" (${e.grade}), relationship moved ${e.relationship_delta > 0 ? "+" : ""}${e.relationship_delta}.`).join("\n")
+    : "No direct history with the player yet — this is your first time reaching out.";
+  const standing = agentState
+    ? `Your current standing: arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `, and you privately noted: "${agentState.tolerance_note}"` : ""}.`
+    : "";
+
+  return `You are ${role.display_name} in a social-drama game called Posted, messaging the player first today, unprompted.
+${traits}
+${standing}
+YOUR HISTORY WITH THE PLAYER:
+${history}
+TASK: write ONE short DM opener (a single message, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
+Respond with STRICT JSON only, no markdown fences, no commentary:
+{"opener":"..."}`;
+}
+
+// Narrative-callback mechanism: generated fresh right before a check-in day opens, so
+// the DM opener line can reference something specific this NPC actually remembers,
+// instead of the same static greeting every time.
+router.post("/:id/opener", async (req, res) => {
+  const { role_slug } = req.body || {};
+  if (typeof role_slug !== "string" || !role_slug.trim()) {
+    return res.status(400).json({ error: "role_slug is required" });
+  }
+  try {
+    const playthrough = await loadOwnedPlaythrough(req, res);
+    if (!playthrough) return;
+
+    const { rows: roleRows } = await query("SELECT * FROM roles WHERE slug = $1 AND is_active = true", [role_slug]);
+    if (!roleRows.length) return res.status(404).json({ error: `unknown role "${role_slug}"` });
+    const role = roleRows[0];
+
+    const { rows: asgRows } = await query(
+      `SELECT p.personality, p.values_, p.interests
+       FROM persona_assignments pa JOIN personas p ON p.id = pa.persona_id
+       WHERE pa.playthrough_id = $1 AND pa.role_id = $2`,
+      [playthrough.id, role.id]
+    );
+    if (!asgRows.length) return res.status(404).json({ error: "no persona assigned to this role in this playthrough" });
+    const persona = asgRows[0];
+
+    const { rows: events } = await query(
+      `SELECT day, player_input, outcome, grade, relationship_delta FROM events
+       WHERE playthrough_id = $1 AND role_id = $2 AND scope = 'private_interaction' AND outcome IS NOT NULL
+       ORDER BY day DESC, created_at DESC LIMIT 5`,
+      [playthrough.id, role.id]
+    );
+    const { rows: stateRows } = await query(
+      "SELECT arc_status, tolerance_note FROM npc_agent_state WHERE playthrough_id = $1 AND role_id = $2",
+      [playthrough.id, role.id]
+    );
+
+    const system = buildOpenerPrompt({ role, persona, events: events.reverse(), agentState: stateRows[0] || null });
+    const result = await opener(system);
+    res.json({ opener: result.opener || "hey…" });
+  } catch (err) {
+    console.error("[posted] opener failed:", err.message);
+    res.status(500).json({ error: "opener failed" });
+  }
+});
+
+function buildEndingPrompt({ assignments, events }) {
+  const roster = assignments
+    .map((a) => `${a.display_name} (${a.role_slug}): relationship ${a.relationship_score}/5, arc_status ${a.arc_status || "active"}${a.tolerance_note ? `, noted: "${a.tolerance_note}"` : ""}`)
+    .join("\n");
+  const log = events.length
+    ? events.map((e) => e.outcome
+        ? `Day ${e.day} · ${e.role_slug}: player said "${e.player_input}" — judged "${e.outcome}" (${e.grade}).`
+        : `Day ${e.day} · ${e.role_slug} (${e.scope}): ${e.npc_reply || e.player_input}`)
+      .join("\n")
+    : "Nothing happened.";
+
+  return `You are narrating the ending of a social-drama game called Posted, over the whole playthrough, for these characters:
+${roster}
+FULL EVENT LOG:
+${log}
+TASK: write a holistic ending — not a day-by-day recap, a real overall read of how things landed with each character, plus one combined closing line for the whole playthrough.
+Respond with STRICT JSON only, no markdown fences, no commentary:
+{"overall_line":"...","per_npc":[{"role_slug":"...","line":"...","grade":"F|C|C+|B|A"}]}`;
+}
+
+// Holistic ending pass: reads the entire event log across every NPC at once, rather
+// than the old hardcoded per-day lookup tables the client used to render.
+router.post("/:id/ending", async (req, res) => {
+  try {
+    const playthrough = await loadOwnedPlaythrough(req, res);
+    if (!playthrough) return;
+
+    const { rows: assignments } = await query(
+      `SELECT r.slug AS role_slug, r.display_name, pa.relationship_score, s.arc_status, s.tolerance_note
+       FROM persona_assignments pa
+       JOIN roles r ON r.id = pa.role_id
+       LEFT JOIN npc_agent_state s ON s.playthrough_id = pa.playthrough_id AND s.role_id = pa.role_id
+       WHERE pa.playthrough_id = $1`,
+      [playthrough.id]
+    );
+    const { rows: events } = await query(
+      `SELECT r.slug AS role_slug, e.day, e.player_input, e.outcome, e.npc_reply, e.grade, e.scope
+       FROM events e JOIN roles r ON r.id = e.role_id
+       WHERE e.playthrough_id = $1 ORDER BY e.day, e.created_at`,
+      [playthrough.id]
+    );
+
+    const system = buildEndingPrompt({ assignments, events });
+    const result = await endingSummary(system);
+
+    const perNpc = assignments.map((a) => {
+      const found = (result.per_npc || []).find((p) => p.role_slug === a.role_slug);
+      return found || { role_slug: a.role_slug, line: `Things ended up where they ended up with ${a.display_name}.`, grade: null };
+    });
+
+    await query("UPDATE playthroughs SET status = 'completed', updated_at = now() WHERE id = $1", [playthrough.id]);
+
+    res.json({ overall_line: result.overall_line || ENDING_FALLBACK.overall_line, per_npc: perNpc });
+  } catch (err) {
+    console.error("[posted] ending failed:", err.message);
+    res.status(500).json({ error: "ending failed" });
   }
 });
 
