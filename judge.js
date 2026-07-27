@@ -6,8 +6,10 @@ const REFLECT_FALLBACK = { arc_status: "active", tolerance_note: null, internal_
 const OPENER_FALLBACK = { opener: "hey…" };
 const ENDING_FALLBACK = { overall_line: "You made it through.", per_npc: [] };
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.warn("[posted] Warning: ANTHROPIC_API_KEY is not set — AI-judged routes will return neutral fallbacks. Copy .env.example to .env and add your key.");
+if (process.env.ANTHROPIC_API_KEY) {
+  console.log("[posted] ANTHROPIC_API_KEY: configured — AI-judged routes will call the real model.");
+} else {
+  console.warn("[posted] ANTHROPIC_API_KEY: NOT SET — every AI-judged route will silently return the neutral fallback (grade C). Set it in your environment (or Vercel project env vars) and redeploy.");
 }
 
 const anthropic = process.env.ANTHROPIC_API_KEY
@@ -18,8 +20,11 @@ function stripFences(s) {
   return s.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
 }
 
-async function callModel(system, userText, fallback) {
-  if (!anthropic) return { ...fallback };
+async function callModel(label, system, userText, fallback) {
+  if (!anthropic) {
+    console.warn(`[posted] [${label}] SKIPPED — no ANTHROPIC_API_KEY configured, returning fallback`, fallback);
+    return { ...fallback };
+  }
   try {
     const msg = await anthropic.messages.create({
       model: MODEL,
@@ -29,36 +34,37 @@ async function callModel(system, userText, fallback) {
     });
     const raw = (msg.content || []).map((b) => b.text || "").join("");
     const parsed = JSON.parse(stripFences(raw));
+    console.log(`[posted] [${label}] OK —`, parsed);
     return { ...fallback, ...parsed };
   } catch (err) {
-    console.error("[posted] callModel() failed:", err.message);
+    console.error(`[posted] [${label}] FAILED — falling back to neutral default:`, err.message);
     return { ...fallback };
   }
 }
 
 // Reactive judgment: the player typed something, the model scores/grades it in response.
 async function judge(system, userText) {
-  return callModel(system, (userText && String(userText).trim()) || "(said nothing)", JUDGE_FALLBACK);
+  return callModel("judge", system, (userText && String(userText).trim()) || "(said nothing)", JUDGE_FALLBACK);
 }
 
 // Reflective agency: no player message to react to — the model looks at accumulated
 // state and decides something nobody explicitly triggered. All context lives in the
 // system prompt; the "user" turn is just a nudge to act.
 async function reflect(system) {
-  return callModel(system, "Reflect now.", REFLECT_FALLBACK);
+  return callModel("reflect", system, "Reflect now.", REFLECT_FALLBACK);
 }
 
 // Narrative-callback generation: a short in-character DM opener referencing real history,
 // generated fresh right before a check-in day opens (not part of the once-per-day reflection
 // pass, since it's only ever needed for whichever NPC ends up being today's focus).
 async function opener(system) {
-  return callModel(system, "Write the opener now.", OPENER_FALLBACK);
+  return callModel("opener", system, "Write the opener now.", OPENER_FALLBACK);
 }
 
 // Holistic ending pass: reads the whole playthrough at once, across every NPC, instead of
 // concatenating per-day summaries.
 async function endingSummary(system) {
-  return callModel(system, "Summarize the playthrough now.", ENDING_FALLBACK);
+  return callModel("ending", system, "Summarize the playthrough now.", ENDING_FALLBACK);
 }
 
 module.exports = { judge, reflect, opener, endingSummary, JUDGE_FALLBACK, REFLECT_FALLBACK, OPENER_FALLBACK, ENDING_FALLBACK };

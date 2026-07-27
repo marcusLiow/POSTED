@@ -915,7 +915,8 @@ const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, 
             ownsRug:false, ownsPosters:false, postChoice:0, checkinResponse:null, grade:null, apologyStyle:null,
             johnGrade:null, apologyGrade:null, apologyOutcome:null, checkinGrade:null,
             checkinRole:null, today:null, todayPromise:null,
-            playthroughId:null, authToken:null, assignments:null, feedPosts:[] };
+            playthroughId:null, authToken:null, assignments:null, feedPosts:[],
+            johnHistory:[], drakeHistory:[] };
 let daySnapshot = null, selectedDraft = 0;
 function relOf(slug){ return S[slug+"Rel"]; }
 function setRelOf(slug, v){ S[slug+"Rel"] = v; }
@@ -1017,31 +1018,39 @@ async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt){
 function gradeClass(g){ return {F:"f", C:"c", "C+":"c", B:"b", A:"a"}[g] || "c"; }
 const PAYOUT_BY_GRADE = {F:25, C:40, "C+":50, B:60, A:75};
 
+/* Confrontations (John, then Drake) used to resolve after exactly one reply —
+   even a hollow "weak" non-apology ended the scene. Now only "weak" keeps the
+   other person pushing for a real answer; bad/good/great all read as a real
+   resolution the first time they land. Capped so a player who keeps stonewalling
+   doesn't get stuck in an endless loop. */
+const MAX_CONFRONTATION_TURNS = 4;
+function isResolved(outcome, forceResolve){ return forceResolve || outcome!=="weak"; }
+
 /* ---- per-NPC personality anchors + judgment prompts ---- */
 const JSON_SPEC = `Respond with STRICT JSON only — no markdown code fences, no commentary before or after:
 {"outcome":"bad|weak|good|great","npc_reply":"...","relationship_delta":0,"grade":"F|C|C+|B|A"}`;
 
-function johnSystemPrompt(){
+function johnSystemPrompt(transcript){
   return `You are voicing John in a school-drama game called Posted. John is protective of his friends, reacts fast and bluntly in the moment, but forgives quickly once someone genuinely owns what they did.
-SCENE: John just confronted the player in the classroom, because the player posted something online mocking Drake's singing — Drake saw it and was crying in the bathroom.
-CURRENT RELATIONSHIP: John's closeness to the player is ${S.johnRel}/5 (0=hates them, 5=very close).
-TASK: read the player's exact reply below and judge it holistically — tone, sincerity, whether they take responsibility or deflect/blame Drake. Judge the substance and spirit of what they said, not fixed keywords.
+SCENE: John just confronted the player in the classroom, because the player posted something online mocking Drake's singing — Drake saw it and was crying in the bathroom. This is a real back-and-forth, not a single exchange — a hollow or dodgy answer gets pushed on, not accepted.
+${transcript ? `CONVERSATION SO FAR:\n${transcript}\n` : ""}CURRENT RELATIONSHIP: John's closeness to the player is ${S.johnRel}/5 (0=hates them, 5=very close).
+TASK: read the player's most recent reply in light of the conversation so far, and judge it holistically — tone, sincerity, whether they take responsibility or deflect/blame Drake. Judge the substance and spirit of what they said, not fixed keywords.
 Decide:
-- outcome: "bad" (defensive/dismissive/blames Drake), "weak" (a hollow or conditional non-apology), "good" (a real apology, but just words), or "great" (a real apology that also signals they're willing to make it right in person — e.g. wants to go talk to Drake, take the post down, fix it for real)
-- npc_reply: a short 1-2 sentence in-character line from John reacting to what the player said
-- relationship_delta: -2 to +2 — how much John's closeness should shift. Weigh how much trust is already there: the same words land harder the closer they already are.
+- outcome: "bad" (defensive/dismissive/blames Drake — John's done, he walks off), "weak" (a hollow or conditional non-apology — John isn't satisfied and keeps pushing for a real answer), "good" (a real apology, but just words — John accepts it), or "great" (a real apology that also signals they're willing to make it right in person — e.g. wants to go talk to Drake, take the post down, fix it for real)
+- npc_reply: a short 1-2 sentence in-character line from John reacting to what the player said — if it's a dodge, call it out and press again rather than letting it go
+- relationship_delta: -2 to +2 — how much John's closeness should shift this turn. Weigh how much trust is already there: the same words land harder the closer they already are.
 - grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
 ${JSON_SPEC}`;
 }
-function drakeSystemPrompt(){
+function drakeSystemPrompt(transcript){
   return `You are voicing Drake in a school-drama game called Posted. Drake is quiet, slow to trust, doesn't confront people directly, and holds hurt for a while — a real apology to him has to be specific and take ownership, not just "sorry you felt that way."
-SCENE: the player just walked over to apologize to Drake face-to-face, after publicly posting something that mocked his singing and made him cry in front of the school.
-CURRENT RELATIONSHIP: Drake's closeness to the player is ${S.drakeRel}/5 (0=hates them, 5=very close).
-TASK: read the player's exact words below and judge them holistically — do they own it specifically, or hedge/deflect? Judge substance and spirit, not fixed phrases.
+SCENE: the player just walked over to apologize to Drake face-to-face, after publicly posting something that mocked his singing and made him cry in front of the school. This is a real back-and-forth — a hollow non-apology doesn't end the conversation, Drake just gets more guarded and waits for something real.
+${transcript ? `CONVERSATION SO FAR:\n${transcript}\n` : ""}CURRENT RELATIONSHIP: Drake's closeness to the player is ${S.drakeRel}/5 (0=hates them, 5=very close).
+TASK: read the player's most recent words in light of the conversation so far, and judge them holistically — do they own it specifically, or hedge/deflect? Judge substance and spirit, not fixed phrases.
 Decide:
-- outcome: "bad" (dismissive or blames Drake), "weak" (a conditional/hollow "sorry if…" non-apology), "good" (a sincere apology), or "great" (a sincere apology that owns it specifically and commits to making it right, e.g. taking the post down)
-- npc_reply: a short 1-2 sentence in-character reply from Drake — guarded if the apology was weak, quietly grateful if it was real
-- relationship_delta: -2 to +2 — weigh that Drake is already at ${S.drakeRel}/5 closeness; trust already spent matters more here than a stranger's apology would
+- outcome: "bad" (dismissive or blames Drake — he shuts down, done talking), "weak" (a conditional/hollow "sorry if…" non-apology — he stays guarded and waits for a real answer), "good" (a sincere apology — he accepts it), or "great" (a sincere apology that owns it specifically and commits to making it right, e.g. taking the post down)
+- npc_reply: a short 1-2 sentence in-character reply from Drake — guarded and pressing for more if the apology was weak, quietly grateful if it was real
+- relationship_delta: -2 to +2 this turn — weigh that Drake is already at ${S.drakeRel}/5 closeness; trust already spent matters more here than a stranger's apology would
 - grade: "F" for bad, "C" for weak, "C+" or "B" for good, "A" for great
 ${JSON_SPEC}`;
 }
@@ -1994,6 +2003,7 @@ const classCtl={
   goToDrake(done){
     cinematic=true;
     classCtl._drakeDone=done;
+    S.drakeHistory=[];
     const spot=new THREE.Vector3(2.6,0,1.8); // beside Drake's desk (in his aisle)
     const arrive=()=>{
       /* Drake startles and swivels round in his seat to face you */
@@ -2038,19 +2048,31 @@ const classCtl={
     },1700));
   },
   /* the player typed their apology; result is the AI's judgment of it */
-  drakeAnswerAI(result, playerText){
+  drakeAnswerAI(result, playerText, forceResolve){
     const T=(a,b)=>reduce()?a:b;
     const outcome=result.outcome||"weak";
     const npcReply=result.npc_reply||"…";
+    const resolved=isResolved(outcome, forceResolve);
     say(chatAEl,playerC,playerText);
+    const reopen=()=>{
+      /* a hollow apology — Drake stays guarded and waits for a real one instead
+         of the scene ending on it */
+      const drakeInp=document.getElementById("drakeInput");
+      drakeInp.value=""; drakeInp.disabled=false;
+      document.getElementById("drakeSendBtn").disabled=false;
+      document.getElementById("drakeAiStatus").textContent="";
+      document.getElementById("drakeDlg").classList.add("on");
+      document.getElementById("drakeChoices").classList.add("show");
+    };
+    const finalize=()=>{
+      hushAll(); cinematic=false;
+      classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
+    };
     if(outcome==="bad"||outcome==="weak"){
       /* not a real apology: he flinches, then it settles into disappointment */
       roamTimers.push(setTimeout(()=>drakeExpr("shock"), T(200,1600)));
       roamTimers.push(setTimeout(()=>{ drakeExpr("disappointed"); say(chatBEl,drake,npcReply); }, T(350,2500)));
-      roamTimers.push(setTimeout(()=>{
-        hushAll(); cinematic=false;
-        classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
-      }, T(350,2500)+REPLY_LINGER()));
+      roamTimers.push(setTimeout(()=>{ resolved?finalize():reopen(); }, T(350,2500)+REPLY_LINGER()));
       return;
     }
     /* a real apology: he softens into gratitude — tears stop, touched smile, relief ❤ */
@@ -2063,8 +2085,8 @@ const classCtl={
     }, T(200,1700)));
     roamTimers.push(setTimeout(()=>say(chatBEl,drake,npcReply), T(350,2300)));
     roamTimers.push(setTimeout(()=>{
-      hushAll(); reactFloat.classList.remove("go"); reactAnchor=null; cinematic=false;
-      classCtl._drakeDone({outcome, delta:result.relationship_delta, relationship_score:result.relationship_score, grade:result.grade, npc_reply:npcReply});
+      reactFloat.classList.remove("go"); reactAnchor=null;
+      resolved?finalize():reopen();
     }, T(350,2300)+REPLY_LINGER()));
   },
   startReaction(kind, done){
@@ -2548,6 +2570,7 @@ function postNow(){
   }, reduce()?100:700);
 }
 function enterDialogue(){
+  S.johnHistory=[];
   renderHearts();
   const bubs=document.getElementById("vnBubbles");
   bubs.querySelectorAll(".vn-bubble").forEach(b=>{b.style.animation="none"; void b.offsetWidth; b.style.animation="";});
@@ -2586,17 +2609,22 @@ async function submitJohnAnswer(){
   const status=document.getElementById("johnAiStatus");
   inp.disabled=true; btn.disabled=true;
   status.textContent="John is reading your reply…";
+  S.johnHistory.push({from:"you", text:raw});
+  const transcript=S.johnHistory.map(m=>(m.from==="john"?"John: ":"Player: ")+m.text).join("\n");
+  const turnNum=S.johnHistory.filter(m=>m.from==="you").length;
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await judgeMove("john", raw, fallback, johnSystemPrompt);
+  const result=await judgeMove("john", raw, fallback, ()=>johnSystemPrompt(transcript));
   status.textContent="";
-  answerAI(result);
+  S.johnHistory.push({from:"john", text:result.npc_reply||"…"});
+  inp.value="";
+  answerAI(result, turnNum>=MAX_CONFRONTATION_TURNS);
 }
 function applyRelScore(current, result, deltaField){
   if(typeof result.relationship_score==="number") return Math.max(0,Math.min(5,Math.round(result.relationship_score)));
   const delta=typeof result[deltaField]==="number"?Math.round(result[deltaField]):0;
   return Math.max(0,Math.min(5,current+delta));
 }
-function answerAI(result){
+function answerAI(result, forceResolve){
   const outcome=result.outcome||"weak";
   S._prevRel=S.johnRel;
   const nextRel=applyRelScore(S.johnRel, result, "relationship_delta");
@@ -2605,6 +2633,16 @@ function answerAI(result){
   S.johnGrade=result.grade||"C";
   addVnBubble(result.npc_reply||"…");
   renderHearts(delta<0?"crack":(delta>0?"pop":undefined));
+  if(!isResolved(outcome, forceResolve)){
+    /* a hollow answer — John isn't satisfied, leave the dialog open for another
+       reply instead of cutting the confrontation off after one line */
+    setTimeout(()=>{
+      document.getElementById("johnInput").disabled=false;
+      document.getElementById("johnInput").focus();
+      document.getElementById("johnSendBtn").disabled=false;
+    }, REPLY_LINGER());
+    return;
+  }
   /* let the hearts + reply land, then John reacts, then the report card */
   setTimeout(()=>{
     classCtl.startReaction(outcome==="bad"?"bad":"good", ()=>{
@@ -2638,12 +2676,16 @@ async function submitDrakeApology(){
   const status=document.getElementById("drakeAiStatus");
   inp.disabled=true; btn.disabled=true;
   status.textContent="Drake is listening…";
+  S.drakeHistory.push({from:"you", text:raw});
+  const transcript=S.drakeHistory.map(m=>(m.from==="drake"?"Drake: ":"Player: ")+m.text).join("\n");
+  const turnNum=S.drakeHistory.filter(m=>m.from==="you").length;
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await judgeMove("drake", raw, fallback, drakeSystemPrompt);
+  const result=await judgeMove("drake", raw, fallback, ()=>drakeSystemPrompt(transcript));
   status.textContent="";
+  S.drakeHistory.push({from:"drake", text:result.npc_reply||"…"});
   document.getElementById("drakeDlg").classList.remove("on");
   document.getElementById("drakeChoices").classList.remove("show");
-  classCtl.drakeAnswerAI(result, raw);
+  classCtl.drakeAnswerAI(result, raw, turnNum>=MAX_CONFRONTATION_TURNS);
 }
 function showSummary(outcome){
   const lines=document.getElementById("sumLines");
@@ -2789,7 +2831,8 @@ function resetAll(){
                    ownsRug:false,ownsPosters:false,postChoice:0,checkinResponse:null,grade:null,apologyStyle:null,
                    johnGrade:null,apologyGrade:null,apologyOutcome:null,checkinGrade:null,
                    checkinRole:null, today:null, todayPromise:null,
-                   playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[]});
+                   playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[],
+                   johnHistory:[], drakeHistory:[]});
   closeBoard();
   setCoins(0);
   room3d.setFlower(false); room3d.setTeddy(false);

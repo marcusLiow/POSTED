@@ -268,7 +268,12 @@ router.get("/:id/today", async (req, res) => {
       [playthrough.id, focus.role_id]
     );
     const arcStatus = stateRows[0]?.arc_status || "active";
-    const dayType = (playthrough.current_day % 3 === 0 || arcStatus === "broken") ? "quiet" : "checkin";
+    // Paced quiet days start no earlier than day 4 — Day 2 is the first real DM
+    // check-in, so a quiet day landing on day 3 read as the game stalling right
+    // after it started. A "broken" arc can still go quiet at any point; that's
+    // narratively earned, not pacing filler.
+    const dayType = (arcStatus === "broken" || (playthrough.current_day >= 4 && playthrough.current_day % 3 === 0))
+      ? "quiet" : "checkin";
 
     res.json({
       day: playthrough.current_day,

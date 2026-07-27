@@ -4,12 +4,11 @@ const path = require("path");
 const express = require("express");
 const { judge } = require("./judge");
 
-if (!process.env.JWT_SECRET) {
+if (process.env.JWT_SECRET) {
+  console.log("[posted] JWT_SECRET: configured");
+} else {
   process.env.JWT_SECRET = crypto.randomBytes(32).toString("hex");
-  console.warn("[posted] Warning: JWT_SECRET is not set — generated a random one for this process only. Existing tokens will stop working on restart; set JWT_SECRET in .env for persistent sessions.");
-}
-if (!process.env.DATABASE_URL) {
-  console.warn("[posted] Warning: DATABASE_URL is not set — multiplayer routes will fail until it's configured in .env (see .env.example).");
+  console.warn("[posted] JWT_SECRET: NOT SET — generated a random one for this process only. On serverless (Vercel) this regenerates on every cold start, silently invalidating existing guest tokens (they'll 401). Set JWT_SECRET in your environment and redeploy for persistent sessions.");
 }
 
 const PORT = process.env.PORT || 3000;
@@ -39,6 +38,10 @@ app.get("/multiplayer", (req, res) => {
   res.sendFile(path.join(__dirname, "multiplayer.html"));
 });
 
-app.listen(PORT, () => {
-  console.log(`[posted] listening on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`[posted] listening on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
