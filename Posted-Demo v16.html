@@ -1004,14 +1004,14 @@ function ensurePlaythrough(){
 /* One judged "move": tries the persona-backed decision endpoint (real memory,
    real matched persona, feeds the swarm-agent reflections); falls back to a
    stateless aiJudge() call with the original hardcoded prompt if unavailable. */
-async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt){
+async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt, scenario){
   await ensurePlaythrough();
   if(S.playthroughId){
     try{
       const res = await fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
         method:"POST",
         headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
-        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput, medium: S.checkinMedium})
+        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput, medium: S.checkinMedium, scenario})
       });
       if(!res.ok){
         console.error("decision call failed", res.status, await res.text().catch(()=>""));
@@ -2715,7 +2715,7 @@ async function submitJohnAnswer(){
   const transcript=S.johnHistory.map(m=>(m.from==="john"?"John: ":"Player: ")+m.text).join("\n");
   const turnNum=S.johnHistory.filter(m=>m.from==="you").length;
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await judgeMove("john", raw, fallback, ()=>johnSystemPrompt(transcript));
+  const result=await judgeMove("john", raw, fallback, ()=>johnSystemPrompt(transcript), "day1_john_confrontation");
   status.textContent="";
   S.johnHistory.push({from:"john", text:result.npc_reply||"…"});
   inp.value="";
@@ -2894,7 +2894,7 @@ async function submitDrakeApology(){
   const transcript=S.drakeHistory.map(m=>(m.from==="drake"?"Drake: ":"Player: ")+m.text).join("\n");
   const turnNum=S.drakeHistory.filter(m=>m.from==="you").length;
   const fallback={outcome:"weak", npc_reply:"…okay.", relationship_delta:0, grade:"C"};
-  const result=await judgeMove("drake", raw, fallback, ()=>drakeSystemPrompt(transcript));
+  const result=await judgeMove("drake", raw, fallback, ()=>drakeSystemPrompt(transcript), "day1_drake_apology");
   status.textContent="";
   S.drakeHistory.push({from:"drake", text:result.npc_reply||"…"});
   document.getElementById("drakeDlg").classList.remove("on");

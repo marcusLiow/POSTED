@@ -20,6 +20,18 @@ router.use(requireAuth);
 const ALEX_FIRST_CONTACT_SCENARIO =
   `SCENARIO: you're reaching out to the player right now for a real, specific reason — not a generic check-in and not a scripted excuse. Pick one concrete, personal thing actually going on in your life that you'd genuinely text a friend about, e.g.: something real that happened today (a piece of news you saw, drama at school, a fight with a parent), a nagging feeling that you and the player (or you and another friend) have been drifting apart lately, a decision you're stuck on, something that reminded you of them. Stay in character for who you are and make it specific, not vague — this should read like an actual unplanned text, not a plot device.`;
 
+// Fixed narrative beats from the single-player demo's scripted Day 1 (see
+// Posted-Demo v16.html's johnSystemPrompt()/drakeSystemPrompt()) — this is the SAME
+// /decision endpoint multiplayer.html uses for freeform testing, so these only apply
+// when the client explicitly opts in via body.scenario (an unrecognized/absent key
+// resolves to no scenario, per buildSystemPrompt() below), never assumed from day
+// number alone. Without this, the AI judging John/Drake's Day 1 lines has no idea
+// a mocking post about Drake happened and drifts into generic moralizing.
+const SCENARIOS = {
+  day1_john_confrontation: `SCENARIO: you just found out the player posted something publicly mocking Drake's singing — Drake saw it and was crying in the bathroom. That's exactly why you're confronting them right now, in the classroom. Every line you say should stay anchored to Drake specifically — his singing, him crying, the fact that they humiliated him — not a generic "that wasn't cool, be nicer online" lecture. If the player dodges or goes vague, push them back toward what they actually did to Drake.`,
+  day1_drake_apology: `SCENARIO: the player just walked over to apologize to you face-to-face, after publicly posting something that mocked your singing and made you cry in front of the school. Stay anchored to that specific post and how it actually made you feel — don't let this read like a generic apology about nothing in particular.`
+};
+
 async function loadAssignments(playthroughId) {
   const { rows } = await query(
     `SELECT r.slug AS role_slug, r.display_name, r.dramatic_function,
@@ -106,7 +118,7 @@ function mediumLine(medium) {
     : "MEDIUM: this is a DM (texting app) — write it like a real text: lowercase is fine, contractions, fragments, no need for perfect grammar or punctuation.";
 }
 
-function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, agentState, medium = "dm" }) {
+function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, agentState, medium = "dm", scenario: scenarioKey }) {
   const traits = `Personality: ${persona.personality.join(", ")}. Values: ${persona.values_.join(", ")}. Interests: ${persona.interests.join(", ")}.`;
   const freeText = persona.free_text ? `Additional context from the persona's owner: "${persona.free_text}"` : "";
   const history = recentEvents.length
@@ -123,7 +135,8 @@ function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, age
   const standing = agentState
     ? `YOUR CURRENT STANDING (from your own private reflection, since you last spoke to the player): arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `; you privately noted: "${agentState.tolerance_note}"` : ""}. Let this genuinely color your tone and grading below — e.g. if arc_status is "strained" or "broken", or your note describes a shorter fuse, don't judge this message as generously as you would coming in neutral; if "resolved", you can be warmer than the raw relationship number alone suggests.`
     : "";
-  const scenario = role.slug === "alex" && recentEvents.length === 0 ? ALEX_FIRST_CONTACT_SCENARIO : "";
+  const scenario = (scenarioKey && SCENARIOS[scenarioKey])
+    || (role.slug === "alex" && recentEvents.length === 0 ? ALEX_FIRST_CONTACT_SCENARIO : "");
 
   return `You are voicing ${role.display_name} in a social-drama game called Posted — ${role.dramatic_function || "a classmate of the player"}.
 ${traits}
@@ -145,7 +158,7 @@ Respond with STRICT JSON only, no markdown fences, no commentary:
 }
 
 router.post("/:id/decision", async (req, res) => {
-  const { role_slug, day, player_input, medium } = req.body || {};
+  const { role_slug, day, player_input, medium, scenario } = req.body || {};
   if (typeof role_slug !== "string" || !role_slug.trim()) {
     return res.status(400).json({ error: "role_slug is required" });
   }
@@ -181,7 +194,7 @@ router.post("/:id/decision", async (req, res) => {
     );
     const agentState = agentStateRows[0] || null;
 
-    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse(), agentState, medium });
+    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse(), agentState, medium, scenario });
     const result = await judge(system, player_input || "");
 
     const delta = typeof result.relationship_delta === "number" ? Math.round(result.relationship_delta) : 0;
