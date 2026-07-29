@@ -3,66 +3,119 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Posted — Multiplayer Personas (minimal UI)</title>
+<title>Posted — Multiplayer Personas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
 <style>
-  :root{--ink:#3a3129;--bg:#f4ede0;--card:#fff;--accent:#d87460;--green:#75935d;--soft:#9c9284}
+  /* Same palette + fonts as Posted-Demo v16.html, so this feels like part of the same game. */
+  :root{
+    --ink:#3A3129; --ink-soft:#7A6B5A; --paper:#FFFDF8; --card:#FFFFFF; --line:#EEE2D0;
+    --pink:#F2C6BE; --pink2:#E8AC9F; --pink3:#DE9484;
+    --green:#8AA871; --green2:#75935D;
+    --gold:#EDBB55; --gold2:#CE9A36;
+    --bad:#D87460;
+    --shadow:0 14px 34px rgba(90,74,56,.16);
+    --shadow-soft:0 6px 18px rgba(90,74,56,.10);
+  }
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:24px;max-width:880px;margin-inline:auto}
-  h1{font-size:22px;margin-bottom:4px}
-  .sub{color:var(--soft);font-size:13px;margin-bottom:24px}
-  section{background:var(--card);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:0 4px 14px rgba(0,0,0,.06)}
-  h2{font-size:15px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.5px;color:var(--soft)}
-  label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
-  input[type=text],input[type=email],input[type=password],textarea{width:100%;padding:9px 11px;border:1.5px solid #e7ded0;border-radius:8px;font-size:14px;font-family:inherit}
-  textarea{resize:vertical;min-height:50px}
-  button{font-family:inherit;font-weight:700;font-size:13.5px;border:none;border-radius:999px;padding:9px 18px;cursor:pointer;background:var(--accent);color:#fff;margin-top:8px}
-  button.secondary{background:#e7ded0;color:var(--ink)}
-  button:disabled{opacity:.5;cursor:not-allowed}
+  body{
+    font-family:'Nunito',system-ui,sans-serif; color:var(--ink); margin:0;
+    background:linear-gradient(180deg,#F2EFEA 0%, #E7E2DA 100%);
+    padding:36px 20px 64px;
+  }
+  .wrap{max-width:860px;margin-inline:auto}
+  header.page{margin-bottom:28px}
+  .eyebrow{font-family:'Fredoka';font-weight:600;font-size:12px;letter-spacing:2.5px;color:var(--pink3);text-transform:uppercase}
+  h1{font-family:'Fredoka';font-weight:600;font-size:28px;margin:6px 0 8px;letter-spacing:.2px}
+  .sub{color:var(--ink-soft);font-size:14px;line-height:1.55;max-width:640px}
+  section{background:var(--card);border-radius:22px;padding:26px 28px;margin-bottom:22px;box-shadow:var(--shadow-soft);border:1px solid rgba(90,74,56,.05)}
+  h2{font-family:'Fredoka';font-weight:600;font-size:13px;margin:0 0 16px;text-transform:uppercase;letter-spacing:1.6px;color:var(--ink-soft);display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--pink3);flex:none}
+  label{display:block;font-family:'Fredoka';font-weight:500;font-size:13px;margin:14px 0 6px;color:var(--ink)}
+  input[type=text],input[type=email],input[type=password],textarea{
+    width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:12px;
+    font-size:14.5px;font-family:'Nunito',sans-serif;background:var(--paper);color:var(--ink);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus,textarea:focus{outline:none;border-color:var(--pink3);box-shadow:0 0 0 3px rgba(222,148,132,.18)}
+  textarea{resize:vertical;min-height:56px}
+  button{
+    font-family:'Fredoka';font-weight:600;font-size:14px;border:none;cursor:pointer;
+    border-radius:16px;padding:11px 20px;color:#fff;background:var(--pink3);
+    box-shadow:0 4px 0 rgba(58,49,41,.15); margin-top:10px; margin-right:8px;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  button:hover{transform:translateY(-2px)}
+  button:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(58,49,41,.15)}
+  button.secondary{background:var(--paper);color:var(--ink-soft);box-shadow:0 4px 0 var(--line);border:1.5px solid var(--line)}
+  button:disabled{opacity:.5;cursor:not-allowed;transform:none}
   .row{display:flex;gap:10px;flex-wrap:wrap}
-  .row>div{flex:1;min-width:180px}
-  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-  .chip{border:1.5px solid #e7ded0;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;user-select:none}
+  .row>div{flex:1;min-width:220px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{border:1.5px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;
+    cursor:pointer;user-select:none;background:var(--paper);color:var(--ink-soft);
+    transition:all .12s ease;font-weight:600}
+  .chip:hover{border-color:var(--pink3);color:var(--ink)}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .count{font-size:11px;color:var(--soft);font-weight:600}
-  .persona-card{border:1.5px solid #eee2d0;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px}
-  .persona-card .traits{color:var(--soft);font-size:12px;margin-top:3px}
-  .msg{font-size:13px;padding:8px 10px;border-radius:8px;margin-top:10px}
-  .msg.err{background:#fde5e0;color:#a33}
-  .msg.ok{background:#e7f0e0;color:#3a6b2a}
-  .npc-block{border-top:1px dashed #e7ded0;padding-top:12px;margin-top:12px}
-  .npc-block h3{margin:0 0 2px;font-size:14px}
-  .npc-block .traits{color:var(--soft);font-size:12px}
-  .reply{background:#f8f3ea;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13.5px}
-  .grade{font-weight:800;color:var(--accent)}
-  code{background:#f0e9db;padding:2px 5px;border-radius:4px;font-size:12px}
-  .avatarPreview{width:180px;height:180px;margin:6px auto;background:#f8f3ea;border-radius:12px;overflow:hidden}
-  .avatarPreview canvas{display:block;width:100%;height:100%}
-  .miniAvatar{width:64px;height:64px;background:#f8f3ea;border-radius:10px;overflow:hidden;flex-shrink:0}
-  .miniAvatar canvas{display:block;width:100%;height:100%}
-  .swatchRow{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
-  .swatch{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer}
-  .swatch.on{border-color:var(--ink)}
-  .toggleRow{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px}
-  .persona-card{display:flex;gap:12px;align-items:flex-start}
+  .count{font-size:11.5px;color:var(--ink-soft);font-weight:700}
+  .persona-card{display:flex;gap:14px;align-items:flex-start;border:1.5px solid var(--line);
+    border-radius:16px;padding:14px 16px;margin-top:10px;background:var(--paper);transition:box-shadow .15s}
+  .persona-card:hover{box-shadow:var(--shadow-soft)}
+  .persona-card b{font-family:'Fredoka';font-size:14.5px}
   .persona-card .cardBody{flex:1}
-  .npc-block .npcTop{display:flex;gap:12px;align-items:flex-start}
+  .persona-card .traits{color:var(--ink-soft);font-size:12.5px;margin-top:3px;line-height:1.5}
+  .msg{font-family:'Fredoka';font-size:13.5px;font-weight:500;padding:11px 16px;border-radius:14px;margin-top:14px}
+  .msg.err{background:#FBE4DE;color:#A34432}
+  .msg.ok{background:#E9F1E1;color:var(--green2)}
+  .npc-block{border-top:1.5px dashed var(--line);padding-top:18px;margin-top:18px}
+  .npc-block:first-of-type{border-top:none;padding-top:4px;margin-top:8px}
+  .npc-block .npcTop{display:flex;gap:14px;align-items:flex-start;margin-bottom:10px}
+  .npc-block h3{font-family:'Fredoka';margin:0 0 2px;font-size:15.5px}
+  .npc-block .traits{color:var(--ink-soft);font-size:12.5px;line-height:1.5}
+  .reply{background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:10px;font-size:13.5px;line-height:1.5}
+  .grade{font-family:'Fredoka';font-weight:700;color:var(--pink3)}
+  code{background:var(--paper);border:1px solid var(--line);padding:2px 6px;border-radius:6px;font-size:12px}
+  .appearanceGrid{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-top:8px}
+  .appearanceGrid>.previewCol{flex:none;text-align:center}
+  .appearanceGrid>.controlsCol{flex:1;min-width:260px}
+  .avatarPreview{width:190px;height:190px;margin:0 auto 8px;border-radius:20px;overflow:hidden;
+    background:linear-gradient(160deg,var(--pink) 0%, var(--paper) 100%);box-shadow:var(--shadow-soft)}
+  .avatarPreview canvas{display:block;width:100%;height:100%}
+  .previewCaption{font-family:'Fredoka';font-size:11px;letter-spacing:1px;color:var(--ink-soft);text-transform:uppercase}
+  .miniAvatar{width:68px;height:68px;border-radius:16px;overflow:hidden;flex-shrink:0;
+    background:linear-gradient(160deg,var(--pink) 0%, var(--paper) 100%);box-shadow:var(--shadow-soft)}
+  .miniAvatar canvas{display:block;width:100%;height:100%}
+  .swatchRow{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+  .swatch{width:32px;height:32px;border-radius:50%;border:2px solid #fff;cursor:pointer;
+    box-shadow:0 0 0 1.5px var(--line);transition:transform .12s ease, box-shadow .12s ease}
+  .swatch:hover{transform:scale(1.1)}
+  .swatch.on{box-shadow:0 0 0 2.5px var(--ink)}
+  .toggleRow{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;font-family:'Fredoka';font-weight:500}
+  .toggleRow label{margin:0}
+  .toggleRow input[type=checkbox],.toggleRow input[type=radio]{width:16px;height:16px;accent-color:var(--pink3)}
 </style>
 </head>
 <body>
+<div class="wrap">
 
-<h1>Posted — multiplayer personas</h1>
-<div class="sub">Minimal functional UI over the backend in <code>multiplayer-persona-design.md</code>. Proves the pipeline: sign up → build a persona (with its own 3D look) → start a playthrough → get matched with other players' personas → talk to them, AI-judged.</div>
+<header class="page">
+  <div class="eyebrow">Posted · Multiplayer</div>
+  <h1>Build your character</h1>
+  <div class="sub">Sign up, design a persona with its own 3D look, then get matched into other players' games and talk to them — judged live by AI. Proves the pipeline in <code>multiplayer-persona-design.md</code>.</div>
+</header>
 
 <section id="authSection">
-  <h2>Account</h2>
+  <h2>Step 1 · Account</h2>
   <div id="authForms" class="row">
     <div>
       <label>Email</label>
       <input type="email" id="email" placeholder="you@example.com">
       <label>Password</label>
       <input type="password" id="password" placeholder="min 8 characters">
-      <button onclick="doSignup()">Sign up</button>
-      <button class="secondary" onclick="doLogin()">Log in</button>
+      <div>
+        <button onclick="doSignup()">Sign up</button>
+        <button class="secondary" onclick="doLogin()">Log in</button>
+      </div>
     </div>
   </div>
   <div id="authStatus" class="msg" style="display:none"></div>
@@ -72,30 +125,36 @@
 </section>
 
 <section id="personaSection" style="display:none">
-  <h2>Create a persona</h2>
+  <h2>Step 2 · Create a persona</h2>
   <label>Name</label>
   <input type="text" id="pName" placeholder="What should this persona be called?">
 
-  <label style="margin-top:16px">Appearance</label>
-  <div id="apPreview" class="avatarPreview"></div>
+  <label style="margin-top:20px">Appearance</label>
+  <div class="appearanceGrid">
+    <div class="previewCol">
+      <div id="apPreview" class="avatarPreview"></div>
+      <div class="previewCaption">Live preview</div>
+    </div>
+    <div class="controlsCol">
+      <label style="margin-top:0">Hair color</label>
+      <div class="swatchRow" id="hairSwatches"></div>
 
-  <label>Hair color</label>
-  <div class="swatchRow" id="hairSwatches"></div>
+      <label>Top color</label>
+      <div class="swatchRow" id="topSwatches"></div>
 
-  <label>Top color</label>
-  <div class="swatchRow" id="topSwatches"></div>
+      <div class="toggleRow"><input type="checkbox" id="apSkirtOn" onchange="onAppearanceChange()"> <label>Wear a skirt</label></div>
+      <div class="swatchRow" id="skirtSwatches"></div>
 
-  <div class="toggleRow"><input type="checkbox" id="apSkirtOn" onchange="onAppearanceChange()"> <label style="margin:0">Wear a skirt</label></div>
-  <div class="swatchRow" id="skirtSwatches"></div>
-
-  <div class="toggleRow"><input type="checkbox" id="apHoodie" onchange="onAppearanceChange()"> <label style="margin:0">Hoodie</label></div>
-  <div class="toggleRow"><input type="checkbox" id="apClip" onchange="onAppearanceChange()"> <label style="margin:0">Hair clip</label></div>
-  <div class="toggleRow">
-    <label style="margin:0"><input type="radio" name="apExpr" value="smile" checked onchange="onAppearanceChange()"> Smile</label>
-    <label style="margin:0"><input type="radio" name="apExpr" value="frown" onchange="onAppearanceChange()"> Frown</label>
+      <div class="toggleRow"><input type="checkbox" id="apHoodie" onchange="onAppearanceChange()"> <label>Hoodie</label></div>
+      <div class="toggleRow"><input type="checkbox" id="apClip" onchange="onAppearanceChange()"> <label>Hair clip</label></div>
+      <div class="toggleRow">
+        <label><input type="radio" name="apExpr" value="smile" checked onchange="onAppearanceChange()"> Smile</label>
+        <label><input type="radio" name="apExpr" value="frown" onchange="onAppearanceChange()"> Frown</label>
+      </div>
+    </div>
   </div>
 
-  <label style="margin-top:16px">Personality — pick exactly 3 <span class="count" id="pCount">(0/3)</span></label>
+  <label style="margin-top:20px">Personality — pick exactly 3 <span class="count" id="pCount">(0/3)</span></label>
   <div class="chips" id="personalityChips"></div>
 
   <label>Values — pick exactly 2 <span class="count" id="vCount">(0/2)</span></label>
@@ -107,20 +166,23 @@
   <label>Anything else about how you'd react? (optional, ≤200 chars)</label>
   <textarea id="pFreeText" maxlength="200"></textarea>
 
-  <button onclick="createPersona()">Create persona</button>
+  <div><button onclick="createPersona()">Create persona</button></div>
   <div id="personaMsg" class="msg" style="display:none"></div>
 
-  <h2 style="margin-top:20px">My personas</h2>
+  <h2 style="margin-top:28px">My personas</h2>
   <div id="personaList"></div>
 </section>
 
 <section id="playSection" style="display:none">
-  <h2>Playthrough</h2>
-  <button onclick="startPlaythrough()">Start new playthrough (match me with 3 personas)</button>
-  <button class="secondary" id="advanceDayBtn" style="display:none" onclick="advanceDay()">Advance to next day (run NPC reflections)</button>
+  <h2>Step 3 · Playthrough</h2>
+  <div>
+    <button onclick="startPlaythrough()">Start new playthrough (match me with 3 personas)</button>
+    <button class="secondary" id="advanceDayBtn" style="display:none" onclick="advanceDay()">Advance to next day (run NPC reflections)</button>
+  </div>
   <div id="playMsg" class="msg" style="display:none"></div>
   <div id="npcBlocks"></div>
 </section>
+</div>
 
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
