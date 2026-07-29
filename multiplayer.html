@@ -35,12 +35,23 @@
   .reply{background:#f8f3ea;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13.5px}
   .grade{font-weight:800;color:var(--accent)}
   code{background:#f0e9db;padding:2px 5px;border-radius:4px;font-size:12px}
+  .avatarPreview{width:180px;height:180px;margin:6px auto;background:#f8f3ea;border-radius:12px;overflow:hidden}
+  .avatarPreview canvas{display:block;width:100%;height:100%}
+  .miniAvatar{width:64px;height:64px;background:#f8f3ea;border-radius:10px;overflow:hidden;flex-shrink:0}
+  .miniAvatar canvas{display:block;width:100%;height:100%}
+  .swatchRow{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .swatch{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+  .swatch.on{border-color:var(--ink)}
+  .toggleRow{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px}
+  .persona-card{display:flex;gap:12px;align-items:flex-start}
+  .persona-card .cardBody{flex:1}
+  .npc-block .npcTop{display:flex;gap:12px;align-items:flex-start}
 </style>
 </head>
 <body>
 
 <h1>Posted — multiplayer personas</h1>
-<div class="sub">Minimal functional UI over the backend in <code>multiplayer-persona-design.md</code>. Not the styled 3D game — proves the pipeline: sign up → build a persona → start a playthrough → get matched with other players' personas → talk to them, AI-judged.</div>
+<div class="sub">Minimal functional UI over the backend in <code>multiplayer-persona-design.md</code>. Proves the pipeline: sign up → build a persona (with its own 3D look) → start a playthrough → get matched with other players' personas → talk to them, AI-judged.</div>
 
 <section id="authSection">
   <h2>Account</h2>
@@ -65,7 +76,26 @@
   <label>Name</label>
   <input type="text" id="pName" placeholder="What should this persona be called?">
 
-  <label>Personality — pick exactly 3 <span class="count" id="pCount">(0/3)</span></label>
+  <label style="margin-top:16px">Appearance</label>
+  <div id="apPreview" class="avatarPreview"></div>
+
+  <label>Hair color</label>
+  <div class="swatchRow" id="hairSwatches"></div>
+
+  <label>Top color</label>
+  <div class="swatchRow" id="topSwatches"></div>
+
+  <div class="toggleRow"><input type="checkbox" id="apSkirtOn" onchange="onAppearanceChange()"> <label style="margin:0">Wear a skirt</label></div>
+  <div class="swatchRow" id="skirtSwatches"></div>
+
+  <div class="toggleRow"><input type="checkbox" id="apHoodie" onchange="onAppearanceChange()"> <label style="margin:0">Hoodie</label></div>
+  <div class="toggleRow"><input type="checkbox" id="apClip" onchange="onAppearanceChange()"> <label style="margin:0">Hair clip</label></div>
+  <div class="toggleRow">
+    <label style="margin:0"><input type="radio" name="apExpr" value="smile" checked onchange="onAppearanceChange()"> Smile</label>
+    <label style="margin:0"><input type="radio" name="apExpr" value="frown" onchange="onAppearanceChange()"> Frown</label>
+  </div>
+
+  <label style="margin-top:16px">Personality — pick exactly 3 <span class="count" id="pCount">(0/3)</span></label>
   <div class="chips" id="personalityChips"></div>
 
   <label>Values — pick exactly 2 <span class="count" id="vCount">(0/2)</span></label>
@@ -92,6 +122,11 @@
   <div id="npcBlocks"></div>
 </section>
 
+<script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+<script>
+if(!window.THREE) document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"><\/script>');
+</script>
+<script src="/character3d.js"></script>
 <script>
 const API = "";
 let token = localStorage.getItem("postedToken") || null;
@@ -126,6 +161,67 @@ function toggleChip(cat, t){
   if(i>=0) picked[cat].splice(i,1);
   else if(picked[cat].length < COUNTS[cat]) picked[cat].push(t);
   renderChips();
+}
+
+// ---- 3D appearance customization (same chibi model as Posted-Demo v16.html, see character3d.js) ----
+const HAIR_COLORS = ["#33291f","#2b231b","#3d2f20","#6e5335","#efd9a6","#8a4b38"];
+const TOP_COLORS = ["#f2c6be","#8fa9cf","#bfd4dc","#c0a5d3","#8aa871","#de9484"];
+const SKIRT_COLORS = ["#f6f1e6","#f3b8c9","#edbb55"];
+const appearance = { hair: HAIR_COLORS[0], top: TOP_COLORS[0], skirt: null, hoodie: false, clip: false, expression: "smile" };
+let apPreview = null;
+
+function renderSwatchRow(id, colors, selected, onPick){
+  const wrap = document.getElementById(id);
+  wrap.innerHTML = "";
+  colors.forEach(c=>{
+    const el = document.createElement("div");
+    el.className = "swatch"+(selected===c?" on":"");
+    el.style.background = c;
+    el.onclick = ()=>onPick(c);
+    wrap.appendChild(el);
+  });
+}
+function renderAppearancePicker(){
+  renderSwatchRow("hairSwatches", HAIR_COLORS, appearance.hair, c=>{ appearance.hair=c; onAppearanceChange(); });
+  renderSwatchRow("topSwatches", TOP_COLORS, appearance.top, c=>{ appearance.top=c; onAppearanceChange(); });
+  const skirtOn = document.getElementById("apSkirtOn").checked;
+  document.getElementById("skirtSwatches").style.display = skirtOn ? "flex" : "none";
+  renderSwatchRow("skirtSwatches", SKIRT_COLORS, appearance.skirt, c=>{ appearance.skirt=c; onAppearanceChange(); });
+}
+function onAppearanceChange(){
+  const skirtOn = document.getElementById("apSkirtOn").checked;
+  appearance.skirt = skirtOn ? (appearance.skirt || SKIRT_COLORS[0]) : null;
+  appearance.hoodie = document.getElementById("apHoodie").checked;
+  appearance.clip = document.getElementById("apClip").checked;
+  appearance.expression = document.querySelector('input[name="apExpr"]:checked').value;
+  renderAppearancePicker();
+  if(apPreview) apPreview.update(appearance);
+}
+function resetAppearance(){
+  Object.assign(appearance, { hair: HAIR_COLORS[0], top: TOP_COLORS[0], skirt: null, hoodie: false, clip: false, expression: "smile" });
+  document.getElementById("apSkirtOn").checked = false;
+  document.getElementById("apHoodie").checked = false;
+  document.getElementById("apClip").checked = false;
+  document.querySelector('input[name="apExpr"][value="smile"]').checked = true;
+  renderAppearancePicker();
+  if(apPreview) apPreview.update(appearance);
+}
+if(window.Character3D){
+  apPreview = Character3D.mountCharacterPreview(document.getElementById("apPreview"), appearance);
+}
+renderAppearancePicker();
+
+// Mini rotating avatars for persona/NPC cards — tracked per list so we can dispose old
+// WebGL contexts before re-rendering (otherwise repeated loadPersonas()/renderNpcBlocks()
+// calls would leak one GL context per previous render).
+const miniAvatarPools = { personas: [], npcs: [] };
+function mountMiniAvatar(pool, container, personaAppearance){
+  if(!window.Character3D) return;
+  miniAvatarPools[pool].push(Character3D.mountCharacterPreview(container, personaAppearance));
+}
+function clearMiniAvatars(pool){
+  miniAvatarPools[pool].forEach(p=>p.dispose());
+  miniAvatarPools[pool] = [];
 }
 renderChips();
 
@@ -189,12 +285,14 @@ async function createPersona(){
       throw new Error("pick exactly 3 personality, 2 values, 3 interests");
     }
     await api("/api/personas", {method:"POST", body: JSON.stringify({
-      name, personality: picked.personality, values: picked.values, interests: picked.interests, free_text: free_text||undefined
+      name, personality: picked.personality, values: picked.values, interests: picked.interests, free_text: free_text||undefined,
+      appearance
     })});
     showMsg("personaMsg", "Persona created.", true);
     document.getElementById("pName").value = "";
     document.getElementById("pFreeText").value = "";
     picked.personality=[]; picked.values=[]; picked.interests=[]; renderChips();
+    resetAppearance();
     loadPersonas();
   }catch(e){ showMsg("personaMsg", e.message, false); }
 }
@@ -202,12 +300,17 @@ async function createPersona(){
 async function loadPersonas(){
   try{
     const list = await api("/api/personas");
+    clearMiniAvatars("personas");
     const wrap = document.getElementById("personaList");
     wrap.innerHTML = list.length ? "" : "<div class='traits'>No personas yet.</div>";
     list.forEach(p=>{
       const card = document.createElement("div");
       card.className = "persona-card";
-      card.innerHTML = `<b>${p.name}</b> ${p.is_active?"":"<span class='count'>(inactive)</span>"}
+      const avatar = document.createElement("div");
+      avatar.className = "miniAvatar";
+      const body = document.createElement("div");
+      body.className = "cardBody";
+      body.innerHTML = `<b>${p.name}</b> ${p.is_active?"":"<span class='count'>(inactive)</span>"}
         <div class="traits">${p.personality.join(", ")} · ${p.values.join(", ")} · ${p.interests.join(", ")}</div>
         ${p.free_text?`<div class="traits">"${p.free_text}"</div>`:""}`;
       const toggleBtn = document.createElement("button");
@@ -224,9 +327,12 @@ async function loadPersonas(){
         const s = await api(`/api/personas/${p.id}/stats`);
         alert(`Currently active in ${s.times_matched} playthrough(s).`);
       };
-      card.appendChild(toggleBtn);
-      card.appendChild(statsBtn);
+      body.appendChild(toggleBtn);
+      body.appendChild(statsBtn);
+      card.appendChild(avatar);
+      card.appendChild(body);
       wrap.appendChild(card);
+      mountMiniAvatar("personas", avatar, p.appearance);
     });
   }catch(e){ /* not logged in yet */ }
 }
@@ -246,19 +352,26 @@ async function startPlaythrough(){
 
 function renderNpcBlocks(assignments){
   const wrap = document.getElementById("npcBlocks");
+  clearMiniAvatars("npcs");
   wrap.innerHTML = "";
   assignments.forEach(a=>{
     const block = document.createElement("div");
     block.className = "npc-block";
     block.innerHTML = `
-      <h3>${a.display_name} <span class="count">(${a.relationship_score.toFixed(1)}/5)</span></h3>
-      <div class="traits">${a.personality.join(", ")} · ${a.values.join(", ")} · ${a.interests.join(", ")}</div>
+      <div class="npcTop">
+        <div class="miniAvatar" id="avatar-${a.role_slug}"></div>
+        <div>
+          <h3>${a.display_name} <span class="count">(${a.relationship_score.toFixed(1)}/5)</span></h3>
+          <div class="traits">${a.personality.join(", ")} · ${a.values.join(", ")} · ${a.interests.join(", ")}</div>
+        </div>
+      </div>
       <input type="text" placeholder="Say something to ${a.display_name}…" id="input-${a.role_slug}">
       <button onclick="sendDecision('${a.role_slug}')">Send</button>
       <div class="reply" id="reply-${a.role_slug}" style="display:none"></div>
       <div class="traits" id="reflection-${a.role_slug}" style="margin-top:6px"></div>
     `;
     wrap.appendChild(block);
+    mountMiniAvatar("npcs", document.getElementById(`avatar-${a.role_slug}`), a.appearance);
   });
 }
 

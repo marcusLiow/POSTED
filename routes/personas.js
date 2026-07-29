@@ -2,6 +2,7 @@ const express = require("express");
 const { query } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { validateTraits, CURRENT_TRAITS_VERSION } = require("../traits");
+const { validateAppearance, DEFAULT_APPEARANCE } = require("../appearance");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -15,6 +16,7 @@ function toPublic(row) {
     interests: row.interests,
     free_text: row.free_text,
     traits_version: row.traits_version,
+    appearance: { ...DEFAULT_APPEARANCE, ...row.appearance },
     is_active: row.is_active,
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -22,18 +24,19 @@ function toPublic(row) {
 }
 
 router.post("/", async (req, res) => {
-  const { name, personality, values, interests, free_text } = req.body || {};
+  const { name, personality, values, interests, free_text, appearance } = req.body || {};
   if (typeof name !== "string" || !name.trim()) {
     return res.status(400).json({ error: "name is required" });
   }
   const errors = validateTraits({ personality, values, interests, free_text });
+  errors.push(...validateAppearance(appearance));
   if (errors.length) return res.status(400).json({ error: errors.join("; ") });
 
   try {
     const { rows } = await query(
-      `INSERT INTO personas (owner_id, name, personality, values_, interests, free_text, traits_version)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.userId, name.trim(), personality, values, interests, free_text || null, CURRENT_TRAITS_VERSION]
+      `INSERT INTO personas (owner_id, name, personality, values_, interests, free_text, traits_version, appearance)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [req.userId, name.trim(), personality, values, interests, free_text || null, CURRENT_TRAITS_VERSION, appearance || {}]
     );
     res.status(201).json(toPublic(rows[0]));
   } catch (err) {
@@ -72,14 +75,16 @@ router.patch("/:id", async (req, res) => {
     const values = req.body?.values ?? existing.values_;
     const interests = req.body?.interests ?? existing.interests;
     const free_text = req.body?.free_text !== undefined ? req.body.free_text : existing.free_text;
+    const appearance = req.body?.appearance !== undefined ? req.body.appearance : existing.appearance;
 
     const errors = validateTraits({ personality, values, interests, free_text });
+    errors.push(...validateAppearance(req.body?.appearance));
     if (errors.length) return res.status(400).json({ error: errors.join("; ") });
 
     const { rows } = await query(
-      `UPDATE personas SET name=$1, personality=$2, values_=$3, interests=$4, free_text=$5, updated_at=now()
-       WHERE id=$6 RETURNING *`,
-      [name, personality, values, interests, free_text || null, req.params.id]
+      `UPDATE personas SET name=$1, personality=$2, values_=$3, interests=$4, free_text=$5, appearance=$6, updated_at=now()
+       WHERE id=$7 RETURNING *`,
+      [name, personality, values, interests, free_text || null, appearance || {}, req.params.id]
     );
     res.json(toPublic(rows[0]));
   } catch (err) {

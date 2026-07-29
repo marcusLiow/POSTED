@@ -990,6 +990,11 @@ function ensurePlaythrough(){
       S.playthroughId = data.id;
       S.assignments = {};
       data.assignments.forEach(a=>{ S.assignments[a.role_slug]=a; });
+      // The classroom/cutscene 3D worlds are built eagerly at load, likely before this
+      // fetch resolves — re-skin whichever of john/drake/alexC already exist by now.
+      if(typeof john!=="undefined" && john) restyleMatchedNpc(john, "john");
+      if(typeof drake!=="undefined" && drake) restyleMatchedNpc(drake, "drake");
+      if(typeof alexC!=="undefined" && alexC) restyleMatchedNpc(alexC, "alex");
     }catch(err){
       console.error("ensurePlaythrough failed — playing without persistent backend", err);
     }
@@ -1199,7 +1204,48 @@ function makeChibi({shirt=PALETTE.pink, hair=PALETTE.hair, skirt=null, expressio
     c.position.set(-0.16,1.42+baseY,0.25); c.rotation.z=0.5; c.rotation.y=-0.4; g.add(c);
   }
   g.scale.setScalar(scale);
+  // Kept so a matched multiplayer persona's appearance can re-skin this character in
+  // place (see restyleMatchedNpc()) without rebuilding the whole geometry.
+  g.userData.materials = {shirt:shirtM, hair:hairM};
   return g;
+}
+
+// Merges a matched persona's 3D appearance (multiplayer.html's persona creator, see
+// appearance.js) over this file's original hardcoded look for a role, so a returning
+// guest sees whichever real player's persona actually got matched here today instead
+// of always the fixed John/Drake/Alex design — same idea as the AI dialogue already
+// being persona-driven via /decision, just extended to the visuals. Falls back to the
+// hardcoded params untouched if no persona/appearance has loaded yet (e.g. first paint,
+// before ensurePlaythrough() resolves) — see restyleMatchedNpc() for the re-skin once it does.
+function chibiParamsFor(roleSlug, fallback){
+  const ap = S.assignments && S.assignments[roleSlug] && S.assignments[roleSlug].appearance;
+  if(!ap) return fallback;
+  const hex = v=>parseInt(String(v).replace("#","0x"));
+  return {
+    ...fallback,
+    shirt: ap.top ? hex(ap.top) : fallback.shirt,
+    hair: ap.hair ? hex(ap.hair) : fallback.hair,
+    hoodie: ap.hoodie!==undefined ? ap.hoodie : fallback.hoodie,
+    clip: ap.clip!==undefined ? ap.clip : fallback.clip,
+    expression: ap.expression || fallback.expression
+  };
+}
+// Re-skins an already-built chibi group once a matched persona's appearance arrives
+// after the fact (the classroom/cutscene worlds are built eagerly at load, before the
+// guest playthrough fetch in ensurePlaythrough() has necessarily resolved).
+function restyleMatchedNpc(group, roleSlug){
+  const ap = S.assignments && S.assignments[roleSlug] && S.assignments[roleSlug].appearance;
+  if(!group || !ap || !group.userData.materials) return;
+  const hex = v=>parseInt(String(v).replace("#","0x"));
+  if(ap.top) group.userData.materials.shirt.color.setHex(hex(ap.top));
+  if(ap.hair){
+    group.userData.materials.hair.color.setHex(hex(ap.hair));
+    (group.userData.brows||[]).forEach(br=>br.material.color.setHex(hex(ap.hair)));
+  }
+  if(ap.expression && group.userData.mouths){
+    group.userData.mouths.smile.visible = ap.expression!=="frown";
+    group.userData.mouths.frown.visible = ap.expression==="frown";
+  }
 }
 
 /* ---------- generic world scaffolding ---------- */
@@ -1664,7 +1710,7 @@ let john, playerC, drake, kidA, kidB;
       put(rbox(0.1,0.8,0.1,PALETTE.woodDark,0.03),x+lx,0.42,z+lz,s);
     });
     if(z===0.6&&x===1.3){ // Drake's seat — front row, near the player
-      drake=makeChibi({shirt:0xBFD4DC, hair:0x2B231B, brows:true, expression:"frown", seated:true, scale:0.92});
+      drake=makeChibi(chibiParamsFor("drake", {shirt:0xBFD4DC, hair:0x2B231B, brows:true, expression:"frown", seated:true, scale:0.92}));
       drake.position.set(x,0.55,z+0.62); drake.rotation.y=Math.PI; s.add(drake); i++;
       drake.userData.bubbleDy=1.05; drake.userData.headDy=0.86;
       /* — Drake's look: he's @drake.mp3, the music kid — headphones resting on his head — */
@@ -1694,7 +1740,7 @@ let john, playerC, drake, kidA, kidB;
       if(z===0.6&&x===-1.3) kidB=kid;
     }
   }
-  john=makeChibi({shirt:0x8FA9CF, hair:0x3D2F20, brows:true, expression:"frown", hoodie:true});
+  john=makeChibi(chibiParamsFor("john", {shirt:0x8FA9CF, hair:0x3D2F20, brows:true, expression:"frown", hoodie:true}));
   john.position.set(4.6,0.12,-2.4); s.add(john);
   john.userData.bubbleDy=1.6; john.userData.headDy=1.28;
   playerC=makeChibi({shirt:PALETTE.pink, hair:0x332A22, skirt:0xF6F1E6, clip:true});
@@ -2183,7 +2229,7 @@ let alexC, alexGlowMat, alexScreenLight;
   alexScreenLight=new THREE.PointLight(0xBFE4F0, 1.1, 3, 2);
   alexScreenLight.position.set(0,1.5,0.2); s.add(alexScreenLight);
   /* Alex — seated behind the desk, facing his screen (and us) */
-  alexC=makeChibi({shirt:0xC0A5D3, hair:0x6E5335, brows:true, expression:"frown", seated:true});
+  alexC=makeChibi(chibiParamsFor("alex", {shirt:0xC0A5D3, hair:0x6E5335, brows:true, expression:"frown", seated:true}));
   alexC.position.set(0,0.55,-0.35);
   s.add(alexC);
   /* neutral resting face — soften the angry-default brows */

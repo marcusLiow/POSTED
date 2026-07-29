@@ -4,23 +4,26 @@ const { requireAuth } = require("../middleware/auth");
 const { matchPersonasForPlaythrough } = require("../matching");
 const { judge, opener, endingSummary, ENDING_FALLBACK } = require("../judge");
 const { runNpcReflection } = require("../reflection");
+const { DEFAULT_APPEARANCE } = require("../appearance");
 
 const router = express.Router();
 router.use(requireAuth);
 
-// Scripted premise for Alex's very first check-in with the player. Anchored to "no
+// Grounds Alex's very first check-in with the player in a real, specific reason instead
+// of a generic "hey" — texting that opens with an actual concrete topic reads like a real
+// conversation, a scripted one-liner repeated every playthrough doesn't. Anchored to "no
 // prior judged history with Alex yet" rather than a specific day number — which day
 // that first check-in actually lands on depends on the /today focus algorithm below
 // (normally day 2, but not guaranteed), so keying off the day count would drift out
 // of sync. Fed into both the opener and the decision judge so neither invents an
 // unrelated reason for Alex reaching out.
 const ALEX_FIRST_CONTACT_SCENARIO =
-  "SCENARIO: you have a math test tomorrow and you're genuinely nervous about it — that's why you're reaching out to the player right now. Let this be the actual reason for the conversation, not a generic check-in.";
+  `SCENARIO: you're reaching out to the player right now for a real, specific reason — not a generic check-in and not a scripted excuse. Pick one concrete, personal thing actually going on in your life that you'd genuinely text a friend about, e.g.: something real that happened today (a piece of news you saw, drama at school, a fight with a parent), a nagging feeling that you and the player (or you and another friend) have been drifting apart lately, a decision you're stuck on, something that reminded you of them. Stay in character for who you are and make it specific, not vague — this should read like an actual unplanned text, not a plot device.`;
 
 async function loadAssignments(playthroughId) {
   const { rows } = await query(
     `SELECT r.slug AS role_slug, r.display_name, r.dramatic_function,
-            p.personality, p.values_, p.interests,
+            p.personality, p.values_, p.interests, p.appearance,
             pa.relationship_score
      FROM persona_assignments pa
      JOIN roles r ON r.id = pa.role_id
@@ -30,12 +33,15 @@ async function loadAssignments(playthroughId) {
   );
   // Deliberately omit persona name/owner/free_text/id from what the player can see —
   // presented as an in-game character, not "someone else's persona" (§3, Visibility).
+  // appearance (hair/top colors, hoodie, etc.) is included — it's a cosmetic, not an
+  // identity leak — so the 3D game can render this specific matched look.
   return rows.map((r) => ({
     role_slug: r.role_slug,
     display_name: r.display_name,
     personality: r.personality,
     values: r.values_,
     interests: r.interests,
+    appearance: { ...DEFAULT_APPEARANCE, ...r.appearance },
     relationship_score: Number(r.relationship_score)
   }));
 }
@@ -327,6 +333,9 @@ function buildOpenerPrompt({ role, persona, events, agentState, medium = "dm" })
     ? `Your current standing: arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `, and you privately noted: "${agentState.tolerance_note}"` : ""}.`
     : "";
   const scenario = role.slug === "alex" && events.length === 0 ? ALEX_FIRST_CONTACT_SCENARIO : "";
+  const approach = medium === "in_person"
+    ? "approaching the player first today, unprompted, face-to-face at school (hallway, classroom, etc.) and saying something short out loud"
+    : "messaging the player first today, unprompted, over DM";
 
   return `You are ${role.display_name} in a social-drama game called Posted, ${approach}.
 ${traits}
@@ -334,7 +343,9 @@ ${standing}
 ${scenario}
 YOUR HISTORY WITH THE PLAYER:
 ${history}
-TASK: write ONE short DM opener (a single message, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
+${mediumLine(medium)}
+${VOICE_GUARDRAILS}
+TASK: write ONE short opener line (a single line, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
 Respond with STRICT JSON only, no markdown fences, no commentary:
 {"opener":"..."}`;
 }

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS personas (
   interests      TEXT[] NOT NULL,
   free_text      TEXT,
   traits_version INT NOT NULL DEFAULT 1,
+  appearance     JSONB NOT NULL DEFAULT '{}'::jsonb, -- chibi 3D look, see appearance.js
   is_active      BOOLEAN NOT NULL DEFAULT true,  -- owner can pull persona from matching pool
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -101,12 +102,15 @@ INSERT INTO roles (slug, display_name, dramatic_function) VALUES
   ('alex',  'Alex',  'the anxious one, wants closeness, notices being ignored quickly, easily reassured')
 ON CONFLICT (slug) DO NOTHING;
 
-INSERT INTO personas (owner_id, name, personality, values_, interests, free_text, traits_version)
+INSERT INTO personas (owner_id, name, personality, values_, interests, free_text, traits_version, appearance)
 VALUES
   (NULL, 'John (default)',  ARRAY['protective','blunt','quick-to-forgive'],   ARRAY['loyalty','fairness'],   ARRAY['sports','gaming','music'],
-   'Reacts fast and publicly, but forgives quickly once someone genuinely owns what they did.', 1),
+   'Reacts fast and publicly, but forgives quickly once someone genuinely owns what they did.', 1,
+   '{"hair":"#3d2f20","top":"#8fa9cf","skirt":null,"hoodie":true,"clip":false,"expression":"frown"}'::jsonb),
   (NULL, 'Drake (default)', ARRAY['guarded','slow-to-trust','reserved'],      ARRAY['honesty','stability'],  ARRAY['music','art','reading'],
-   'Doesn''t confront people directly and holds hurt for a while — a real apology has to be specific.', 1),
+   'Doesn''t confront people directly and holds hurt for a while — a real apology has to be specific.', 1,
+   '{"hair":"#2b231b","top":"#bfd4dc","skirt":null,"hoodie":false,"clip":false,"expression":"frown"}'::jsonb),
   (NULL, 'Alex (default)',  ARRAY['anxious','affectionate','easily-hurt'],    ARRAY['loyalty','creativity'], ARRAY['food','gaming','movies/tv'],
-   'Wants closeness, notices being ignored quickly, easily reassured by a little genuine attention.', 1)
+   'Wants closeness, notices being ignored quickly, easily reassured by a little genuine attention.', 1,
+   '{"hair":"#6e5335","top":"#c0a5d3","skirt":null,"hoodie":false,"clip":false,"expression":"frown"}'::jsonb)
 ON CONFLICT DO NOTHING;
