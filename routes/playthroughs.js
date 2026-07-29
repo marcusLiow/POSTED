@@ -8,6 +8,15 @@ const { runNpcReflection } = require("../reflection");
 const router = express.Router();
 router.use(requireAuth);
 
+// Scripted premise for Alex's very first check-in with the player. Anchored to "no
+// prior judged history with Alex yet" rather than a specific day number — which day
+// that first check-in actually lands on depends on the /today focus algorithm below
+// (normally day 2, but not guaranteed), so keying off the day count would drift out
+// of sync. Fed into both the opener and the decision judge so neither invents an
+// unrelated reason for Alex reaching out.
+const ALEX_FIRST_CONTACT_SCENARIO =
+  "SCENARIO: you have a math test tomorrow and you're genuinely nervous about it — that's why you're reaching out to the player right now. Let this be the actual reason for the conversation, not a generic check-in.";
+
 async function loadAssignments(playthroughId) {
   const { rows } = await query(
     `SELECT r.slug AS role_slug, r.display_name, r.dramatic_function,
@@ -96,7 +105,9 @@ function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, age
   const freeText = persona.free_text ? `Additional context from the persona's owner: "${persona.free_text}"` : "";
   const history = recentEvents.length
     ? "RECENT HISTORY WITH THIS PLAYER:\n" + recentEvents
-        .map((e) => `Day ${e.day}: player said "${e.player_input}" — judged "${e.outcome}" (${e.grade}), relationship moved ${e.relationship_delta > 0 ? "+" : ""}${e.relationship_delta}.`)
+        .map((e) => e.outcome
+          ? `Day ${e.day}: player said "${e.player_input}" — judged "${e.outcome}" (${e.grade}), relationship moved ${e.relationship_delta > 0 ? "+" : ""}${e.relationship_delta}.`
+          : `Day ${e.day}: you messaged the player first: "${e.npc_reply}" — no reply from them judged yet (the message below may be their reply to this).`)
         .join("\n")
     : "RECENT HISTORY WITH THIS PLAYER: none yet — this is your first interaction.";
 
@@ -106,6 +117,7 @@ function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, age
   const standing = agentState
     ? `YOUR CURRENT STANDING (from your own private reflection, since you last spoke to the player): arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `; you privately noted: "${agentState.tolerance_note}"` : ""}. Let this genuinely color your tone and grading below — e.g. if arc_status is "strained" or "broken", or your note describes a shorter fuse, don't judge this message as generously as you would coming in neutral; if "resolved", you can be warmer than the raw relationship number alone suggests.`
     : "";
+  const scenario = role.slug === "alex" && recentEvents.length === 0 ? ALEX_FIRST_CONTACT_SCENARIO : "";
 
   return `You are voicing ${role.display_name} in a social-drama game called Posted — ${role.dramatic_function || "a classmate of the player"}.
 ${traits}
@@ -115,6 +127,7 @@ ${mediumLine(medium)}
 ${VOICE_GUARDRAILS}
 ${history}
 ${standing}
+${scenario}
 TASK: read the player's message below and judge it holistically — tone, sincerity, whether it actually addresses how you feel — not by matching fixed phrases. Let your personality and values above color both your judgment and how you reply, so different personas react differently to similar words.
 Decide:
 - outcome: "bad" | "weak" | "good" | "great"
@@ -152,7 +165,7 @@ router.post("/:id/decision", async (req, res) => {
     const relationshipScore = Number(assignment.relationship_score);
 
     const { rows: recentEvents } = await query(
-      `SELECT day, player_input, outcome, grade, relationship_delta FROM events
+      `SELECT day, player_input, outcome, grade, relationship_delta, npc_reply FROM events
        WHERE playthrough_id = $1 AND role_id = $2 ORDER BY created_at DESC LIMIT 5`,
       [playthrough.id, role.id]
     );
@@ -313,18 +326,15 @@ function buildOpenerPrompt({ role, persona, events, agentState, medium = "dm" })
   const standing = agentState
     ? `Your current standing: arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `, and you privately noted: "${agentState.tolerance_note}"` : ""}.`
     : "";
-  const approach = medium === "in_person"
-    ? "approaching the player first today, unprompted, face-to-face at school (hallway, classroom, etc.) and saying something short out loud"
-    : "messaging the player first today, unprompted, over DM";
+  const scenario = role.slug === "alex" && events.length === 0 ? ALEX_FIRST_CONTACT_SCENARIO : "";
 
   return `You are ${role.display_name} in a social-drama game called Posted, ${approach}.
 ${traits}
 ${standing}
+${scenario}
 YOUR HISTORY WITH THE PLAYER:
 ${history}
-${mediumLine(medium)}
-${VOICE_GUARDRAILS}
-TASK: write ONE short opener line (a single line, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
+TASK: write ONE short DM opener (a single message, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
 Respond with STRICT JSON only, no markdown fences, no commentary:
 {"opener":"..."}`;
 }
@@ -367,7 +377,18 @@ router.post("/:id/opener", async (req, res) => {
 
     const system = buildOpenerPrompt({ role, persona, events: events.reverse(), agentState: stateRows[0] || null, medium });
     const result = await opener(system);
-    res.json({ opener: result.opener || "hey…" });
+    const openerText = result.opener || "hey…";
+
+    // Recorded as history (outcome/grade left null — nothing's been judged yet) so
+    // /decision knows this NPC messaged first today, instead of judging the player's
+    // reply with no idea an opener was ever sent.
+    await query(
+      `INSERT INTO events (playthrough_id, role_id, day, npc_reply, scope)
+       VALUES ($1, $2, $3, $4, 'private_interaction')`,
+      [playthrough.id, role.id, playthrough.current_day, openerText]
+    );
+
+    res.json({ opener: openerText });
   } catch (err) {
     console.error("[posted] opener failed:", err.message);
     res.status(500).json({ error: "opener failed" });

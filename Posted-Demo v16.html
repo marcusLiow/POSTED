@@ -2330,6 +2330,7 @@ function stub(msg){
   t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600);
 }
 function startMorning(){
+  deskBusy=false;
   setDayChip(`Day ${S.day} · Morning`);
   setNight(false);
   document.getElementById("roomActions").style.display="none";
@@ -2338,7 +2339,10 @@ function startMorning(){
   room3d.resetGirl();
   go("sc-bedroom");
 }
+let deskBusy=false;
 function onPcClick(){
+  if(deskBusy) return; /* ignore repeat clicks while the walk-over/opener fetch is still in flight */
+  deskBusy=true;
   document.getElementById("pcHint").style.display="none";
   hintVisible=false;
   room3d.walkToDesk(openPostScreen);
@@ -2360,6 +2364,7 @@ async function openPostScreen(){
   daySnapshot={coins:S.coins, johnRel:S.johnRel, drakeRel:S.drakeRel, alexRel:S.alexRel};
   if(S.day===1){
     document.getElementById("pcClock").textContent=`Day ${S.day} · 8:04 AM`;
+    deskBusy=false;
     go("sc-post");
     return;
   }
@@ -2440,6 +2445,7 @@ async function enterDM(){
     }catch(err){ console.error("opener fetch failed", err); }
   }
   resetDM(openerText);
+  deskBusy=false;
   go("sc-dm");
   /* leave-on-read: cancelled the moment the player starts typing (typing = engaging) */
   dmIgnoreTimer=setTimeout(dmIgnore, 10000);
@@ -2927,6 +2933,7 @@ function resetComposer(){
   document.getElementById("postBtn").disabled=true;
 }
 function goHome(){
+  deskBusy=false;
   setDayChip(`Day ${S.day} · Night`);
   document.getElementById("pcHint").style.display="none";
   hintVisible=false;
