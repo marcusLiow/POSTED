@@ -76,7 +76,22 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, agentState }) {
+// Shared across every AI-voiced route so John/Drake/Alex don't read like a customer-
+// service bot regardless of medium — see posted-ai-input-plan.md complaint that
+// npc_reply lines were coming back stiff/formal.
+const VOICE_GUARDRAILS = `VOICE: write like an actual teenager talking to someone they know, not a therapist, narrator, or assistant.
+- Don't restate or summarize what the player just said back to them ("I hear that you...", "it sounds like...").
+- Don't over-explain your own feelings in full sentences unless your personality is genuinely that expressive — most teenagers imply, deflect, or say less than they mean.
+- Short and natural beats grammatically complete. Trail off, interrupt yourself, or leave a thought unfinished if that's how the moment would actually land.
+- Follow your personality/values above for how blunt, warm, sarcastic, or guarded the delivery is — don't default to a generic "nice" tone.`;
+
+function mediumLine(medium) {
+  return medium === "in_person"
+    ? "MEDIUM: this is happening face-to-face (hallway, classroom, etc.) — a spoken line, not a text. No texting abbreviations, but still casual spoken teen dialogue, not a monologue."
+    : "MEDIUM: this is a DM (texting app) — write it like a real text: lowercase is fine, contractions, fragments, no need for perfect grammar or punctuation.";
+}
+
+function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, agentState, medium = "dm" }) {
   const traits = `Personality: ${persona.personality.join(", ")}. Values: ${persona.values_.join(", ")}. Interests: ${persona.interests.join(", ")}.`;
   const freeText = persona.free_text ? `Additional context from the persona's owner: "${persona.free_text}"` : "";
   const history = recentEvents.length
@@ -96,6 +111,8 @@ function buildSystemPrompt({ role, persona, relationshipScore, recentEvents, age
 ${traits}
 ${freeText}
 CURRENT RELATIONSHIP: your closeness to the player is ${relationshipScore}/5 (0 = you hate them, 5 = very close).
+${mediumLine(medium)}
+${VOICE_GUARDRAILS}
 ${history}
 ${standing}
 TASK: read the player's message below and judge it holistically — tone, sincerity, whether it actually addresses how you feel — not by matching fixed phrases. Let your personality and values above color both your judgment and how you reply, so different personas react differently to similar words.
@@ -109,7 +126,7 @@ Respond with STRICT JSON only, no markdown fences, no commentary:
 }
 
 router.post("/:id/decision", async (req, res) => {
-  const { role_slug, day, player_input } = req.body || {};
+  const { role_slug, day, player_input, medium } = req.body || {};
   if (typeof role_slug !== "string" || !role_slug.trim()) {
     return res.status(400).json({ error: "role_slug is required" });
   }
@@ -145,7 +162,7 @@ router.post("/:id/decision", async (req, res) => {
     );
     const agentState = agentStateRows[0] || null;
 
-    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse(), agentState });
+    const system = buildSystemPrompt({ role, persona, relationshipScore, recentEvents: recentEvents.reverse(), agentState, medium });
     const result = await judge(system, player_input || "");
 
     const delta = typeof result.relationship_delta === "number" ? Math.round(result.relationship_delta) : 0;
@@ -288,7 +305,7 @@ router.get("/:id/today", async (req, res) => {
   }
 });
 
-function buildOpenerPrompt({ role, persona, events, agentState }) {
+function buildOpenerPrompt({ role, persona, events, agentState, medium = "dm" }) {
   const traits = `Personality: ${persona.personality.join(", ")}. Values: ${persona.values_.join(", ")}. Interests: ${persona.interests.join(", ")}.`;
   const history = events.length
     ? events.map((e) => `Day ${e.day}: player said "${e.player_input}" — you judged it "${e.outcome}" (${e.grade}), relationship moved ${e.relationship_delta > 0 ? "+" : ""}${e.relationship_delta}.`).join("\n")
@@ -296,13 +313,18 @@ function buildOpenerPrompt({ role, persona, events, agentState }) {
   const standing = agentState
     ? `Your current standing: arc_status is "${agentState.arc_status}"${agentState.tolerance_note ? `, and you privately noted: "${agentState.tolerance_note}"` : ""}.`
     : "";
+  const approach = medium === "in_person"
+    ? "approaching the player first today, unprompted, face-to-face at school (hallway, classroom, etc.) and saying something short out loud"
+    : "messaging the player first today, unprompted, over DM";
 
-  return `You are ${role.display_name} in a social-drama game called Posted, messaging the player first today, unprompted.
+  return `You are ${role.display_name} in a social-drama game called Posted, ${approach}.
 ${traits}
 ${standing}
 YOUR HISTORY WITH THE PLAYER:
 ${history}
-TASK: write ONE short DM opener (a single message, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
+${mediumLine(medium)}
+${VOICE_GUARDRAILS}
+TASK: write ONE short opener line (a single line, in your own voice, under 20 words) that genuinely references something SPECIFIC from your history above — not a generic "hey, how's it going". If you have no real history yet, a plausible, personality-fitting opener is fine.
 Respond with STRICT JSON only, no markdown fences, no commentary:
 {"opener":"..."}`;
 }
@@ -311,7 +333,7 @@ Respond with STRICT JSON only, no markdown fences, no commentary:
 // the DM opener line can reference something specific this NPC actually remembers,
 // instead of the same static greeting every time.
 router.post("/:id/opener", async (req, res) => {
-  const { role_slug } = req.body || {};
+  const { role_slug, medium } = req.body || {};
   if (typeof role_slug !== "string" || !role_slug.trim()) {
     return res.status(400).json({ error: "role_slug is required" });
   }
@@ -343,7 +365,7 @@ router.post("/:id/opener", async (req, res) => {
       [playthrough.id, role.id]
     );
 
-    const system = buildOpenerPrompt({ role, persona, events: events.reverse(), agentState: stateRows[0] || null });
+    const system = buildOpenerPrompt({ role, persona, events: events.reverse(), agentState: stateRows[0] || null, medium });
     const result = await opener(system);
     res.json({ opener: result.opener || "hey…" });
   } catch (err) {

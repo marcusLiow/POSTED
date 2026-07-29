@@ -671,7 +671,7 @@
     <div id="dlgOverlay">
       <div class="vn-vignette"></div>
       <div class="vn-nameplate mobile-show">
-        John
+        <span id="dlgNameSpan">John</span>
         <div class="hearts" id="hearts"></div>
       </div>
       <div class="vn-bubbles" id="vnBubbles">
@@ -679,10 +679,10 @@
         <div class="vn-bubble">“Drake is crying — he saw it. He was really proud of that cover, and now the whole school is laughing at him.”</div>
       </div>
       <div class="vn-choices" id="vnChoices">
-        <div class="vn-tag">Say something</div>
+        <div class="vn-tag" id="vnTag">Say something</div>
         <div class="vn-input-row">
           <input class="vn-text-input" id="johnInput" type="text" maxlength="140"
-            placeholder="Type what you’d say to John…" autocomplete="off"
+            placeholder="Type what you’d say…" autocomplete="off"
             onkeydown="if(event.key==='Enter')submitJohnAnswer()">
           <button class="vn-send-btn" id="johnSendBtn" onclick="submitJohnAnswer()">Send</button>
         </div>
@@ -910,11 +910,11 @@ class RoundedBoxGeometry extends THREE.BoxGeometry{
 <script>
 
 /* ================= STATE ================= */
-const TOTAL_DAYS = 7; // Day 1 is the fixed John/Drake cold-open; day TOTAL_DAYS's bedtime ends the game.
+const TOTAL_DAYS = 31; // Day 1 is the fixed John/Drake cold-open; day TOTAL_DAYS's bedtime ends the game.
 const S = { day:1, coins:0, johnRel:3, drakeRel:3, alexRel:3, ownsFlower:false, ownsTeddy:false,
             ownsRug:false, ownsPosters:false, postChoice:0, checkinResponse:null, grade:null, apologyStyle:null,
             johnGrade:null, apologyGrade:null, apologyOutcome:null, checkinGrade:null,
-            checkinRole:null, today:null, todayPromise:null,
+            checkinRole:null, checkinMedium:"dm", classFocusRole:null, today:null, todayPromise:null,
             playthroughId:null, authToken:null, assignments:null, feedPosts:[],
             johnHistory:[], drakeHistory:[] };
 let daySnapshot = null, selectedDraft = 0;
@@ -975,9 +975,18 @@ function ensurePlaythrough(){
         localStorage.setItem("postedToken", token);
       }
       S.authToken = token;
-      const res = await fetch("/api/playthroughs", {method:"POST", headers:{Authorization:"Bearer "+token}});
-      if(!res.ok) throw new Error("playthrough create failed: "+res.status);
-      const data = await res.json();
+      const storedId = localStorage.getItem("postedPlaythroughId");
+      let data = null;
+      if(storedId){
+        const getRes = await fetch(`/api/playthroughs/${storedId}`, {headers:{Authorization:"Bearer "+token}});
+        if(getRes.ok) data = await getRes.json();
+      }
+      if(!data){
+        const res = await fetch("/api/playthroughs", {method:"POST", headers:{Authorization:"Bearer "+token}});
+        if(!res.ok) throw new Error("playthrough create failed: "+res.status);
+        data = await res.json();
+        localStorage.setItem("postedPlaythroughId", data.id);
+      }
       S.playthroughId = data.id;
       S.assignments = {};
       data.assignments.forEach(a=>{ S.assignments[a.role_slug]=a; });
@@ -997,7 +1006,7 @@ async function judgeMove(roleSlug, playerInput, fallback, buildFallbackPrompt){
       const res = await fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
         method:"POST",
         headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
-        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput})
+        body: JSON.stringify({role_slug: roleSlug, day: S.day, player_input: playerInput, medium: S.checkinMedium})
       });
       if(!res.ok){
         console.error("decision call failed", res.status, await res.text().catch(()=>""));
@@ -1931,6 +1940,23 @@ function classLoop(){
 }
 const ROAM_MS=12000;
 const classCtl={
+  /* Lighter re-entry for the repeating classroom check-in (odd days after Day 1):
+     same housekeeping as enter() below, minus the Day-1-specific gossip/walk-up —
+     there's no new incident to gossip about on a generic check-in day, so cut
+     straight to the conversation. */
+  enterCheckin(cb){
+    classActive=true; reaction=null; cinematic=false;
+    bang.style.display="none";
+    reactFloat.classList.remove("go"); reactAnchor=null;
+    johnExpr("happy"); drakeExpr("happy");
+    johnPath=[]; johnCb=null;
+    document.getElementById("drakeDlg").classList.remove("on");
+    document.getElementById("drakeChoices").classList.remove("show");
+    endRoam();
+    camState={pos:camISO.pos.clone(), look:camISO.look.clone(), view:camISO.view};
+    camTween=null; applyCam();
+    cb();
+  },
   enter(cb){
     classActive=true; reaction=null; cinematic=false;
     bang.style.display="none";
@@ -2255,8 +2281,9 @@ function playCut(){
     : resp==="weak"
     ? "guess it’s easier if I just laugh it off too."
     : null; /* ignored: the silence stays unnarrated */
-  document.getElementById("cutCaption").textContent =
-    resp==="ignored" ? "Alex’s room · seen, no reply" : "Alex’s room · 8:07 AM";
+  document.getElementById("cutCaption").textContent = resp==="ignored"
+    ? (S.checkinMedium==="in_person" ? "Alex’s room · you said nothing" : "Alex’s room · seen, no reply")
+    : "Alex’s room · 8:07 AM";
   alexExpr("neutral");
   alexC.rotation.set(0,0,0); alexC.position.y=0.55;
   alexC.userData.mouths.smile.scale.setScalar(1);
@@ -2338,12 +2365,22 @@ async function openPostScreen(){
   }
   const today = S.todayPromise ? await S.todayPromise : fallbackToday();
   S.today=today; S.checkinRole=today.focus_role_slug;
+  const inPerson = S.day % 2 === 1; /* odd days = classroom, even days = Chirper DM */
   if(today.day_type==="quiet"){
-    stub(`Quiet day. ${today.focus_display_name} didn’t reach out.`);
+    stub(inPerson
+      ? `Quiet day. ${today.focus_display_name} wasn’t around today.`
+      : `Quiet day. ${today.focus_display_name} didn’t reach out.`);
     goHome();
     return;
   }
-  enterDM();
+  if(inPerson){
+    S.checkinMedium="in_person";
+    go("sc-class");
+    classCtl.enterCheckin(enterClassCheckin);
+  }else{
+    S.checkinMedium="dm";
+    enterDM();
+  }
 }
 
 /* ================= DAY 2 · DM (two-stage conversation) ================= */
@@ -2397,7 +2434,7 @@ async function enterDM(){
       const res=await fetch(`/api/playthroughs/${S.playthroughId}/opener`, {
         method:"POST",
         headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
-        body: JSON.stringify({role_slug:S.checkinRole})
+        body: JSON.stringify({role_slug:S.checkinRole, medium:"dm"})
       });
       if(res.ok){ const data=await res.json(); if(data.opener) openerText=data.opener; }
     }catch(err){ console.error("opener fetch failed", err); }
@@ -2489,7 +2526,7 @@ function dmIgnore(){
     fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
       method:"POST",
       headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
-      body: JSON.stringify({role_slug:S.checkinRole, day:S.day, player_input:""})
+      body: JSON.stringify({role_slug:S.checkinRole, day:S.day, player_input:"", medium:S.checkinMedium})
     }).catch(err=>console.error("ignored-day decision failed", err));
   }
   setTimeout(()=>{
@@ -2507,12 +2544,17 @@ function closeDM(){ S.checkinRole==="alex" ? playCut() : showReflection(); }
 function showReflection(){
   const key=S.checkinResponse||"ignored";
   const name=dispName(S.checkinRole);
+  const inPerson=S.checkinMedium==="in_person";
   const L={
     great:[`You showed up for ${name}.`,`${name} actually opened up — and felt a little less alone for it — that’s the point.`],
     good:[`You showed up — partway.`,`${name} said thanks. A little more would’ve gone a long way.`],
-    weak:[`You kept it light.`,`${name} laughed along. Then stopped typing.`],
+    weak:inPerson
+      ? [`You kept it light.`,`${name} laughed it off. Then went quiet.`]
+      : [`You kept it light.`,`${name} laughed along. Then stopped typing.`],
     bad:[`You brushed ${name} off.`,`${name} didn’t say much after that.`],
-    ignored:[`You left it on read.`,`The message is still sitting there.`]
+    ignored:inPerson
+      ? [`You didn’t say anything.`,`${name} shrugged and walked off.`]
+      : [`You left it on read.`,`The message is still sitting there.`]
   }[key];
   document.getElementById("reflLine").textContent=L[0];
   document.getElementById("reflSub").textContent=L[1];
@@ -2570,24 +2612,31 @@ function postNow(){
   }, reduce()?100:700);
 }
 function enterDialogue(){
+  S.classFocusRole=null;
+  S.checkinMedium="in_person";
   S.johnHistory=[];
-  renderHearts();
+  document.getElementById("dlgNameSpan").textContent="John";
+  document.getElementById("vnTag").textContent="Say something";
+  renderHearts("john");
   const bubs=document.getElementById("vnBubbles");
   bubs.querySelectorAll(".vn-bubble").forEach(b=>{b.style.animation="none"; void b.offsetWidth; b.style.animation="";});
   const ch=document.getElementById("vnChoices"); ch.classList.remove("show");
   const johnInp=document.getElementById("johnInput");
+  johnInp.placeholder="Type what you’d say to John…";
   johnInp.value=""; johnInp.disabled=false;
   document.getElementById("johnSendBtn").disabled=false;
   document.getElementById("johnAiStatus").textContent="";
   document.getElementById("dlgOverlay").classList.add("on");
   setTimeout(()=>ch.classList.add("show"), reduce()?100:1900);
 }
-function renderHearts(anim){
+function renderHearts(roleSlug, anim){
+  roleSlug = roleSlug || "john";
+  const rel = relOf(roleSlug);
   const wrap=document.getElementById("hearts"); wrap.innerHTML="";
   for(let i=1;i<=5;i++){
-    const full=i<=S.johnRel;
+    const full=i<=rel;
     const d=document.createElement("div");
-    d.className="heart"+(anim==="pop"&&i===S.johnRel?" pop":"")+(anim==="crack"&&i>S.johnRel&&i<=S._prevRel?" crack":"");
+    d.className="heart"+(anim==="pop"&&i===rel?" pop":"")+(anim==="crack"&&i>rel&&i<=S._prevRel?" crack":"");
     d.innerHTML=`<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.5-10-10C.6 7.6 2.6 4 6.2 4 8.4 4 10.2 5.3 12 7.4 13.8 5.3 15.6 4 17.8 4 21.4 4 23.4 7.6 22 11c-2 4.5-10 10-10 10z"
       fill="${full?"#D87460":"none"}" stroke="${full?"#D87460":"#D9CDBB"}" stroke-width="2"/></svg>`;
     wrap.appendChild(d);
@@ -2602,6 +2651,7 @@ function addVnBubble(text){
   void b.offsetWidth;
 }
 async function submitJohnAnswer(){
+  if(S.classFocusRole) return submitClassCheckinAnswer();
   const inp=document.getElementById("johnInput");
   const raw=inp.value.trim();
   if(!raw) return;
@@ -2619,6 +2669,118 @@ async function submitJohnAnswer(){
   inp.value="";
   answerAI(result, turnNum>=MAX_CONFRONTATION_TURNS);
 }
+
+/* ================= DYNAMIC CLASSROOM CHECK-IN (odd days after Day 1) =================
+   Same rotating focus-NPC + two-stage judgment as the DM engine (enterDM/dmSend below),
+   just rendered inside the classroom's VN dialogue overlay instead of the Chirper phone
+   screen — kept as its own parallel path (not folded into dmSend) so the phone flow's
+   DOM wiring (dmThread/dmInput/dmClose etc.) stays untouched. */
+let classIgnoreTimer=null, classStage=1, classHistory=[];
+function enterClassCheckinUI(name){
+  document.getElementById("dlgNameSpan").textContent=name;
+  document.getElementById("vnTag").textContent="Say something";
+  document.getElementById("johnInput").placeholder=`Type what you'd say to ${name}…`;
+  const bubs=document.getElementById("vnBubbles"); bubs.innerHTML="";
+  document.getElementById("johnAiStatus").textContent="";
+  const inp=document.getElementById("johnInput");
+  inp.value=""; inp.disabled=false;
+  document.getElementById("johnSendBtn").disabled=false;
+  document.getElementById("vnChoices").classList.remove("show");
+  document.getElementById("dlgOverlay").classList.add("on");
+}
+async function enterClassCheckin(){
+  S.checkinMedium="in_person";
+  S.classFocusRole=S.checkinRole;
+  classStage=1; classHistory=[];
+  const name=dispName(S.checkinRole);
+  enterClassCheckinUI(name);
+  renderHearts(S.checkinRole);
+
+  let openerText = "hey… you around?";
+  if(S.playthroughId){
+    try{
+      const res=await fetch(`/api/playthroughs/${S.playthroughId}/opener`, {
+        method:"POST",
+        headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+        body: JSON.stringify({role_slug:S.checkinRole, medium:"in_person"})
+      });
+      if(res.ok){ const data=await res.json(); if(data.opener) openerText=data.opener; }
+    }catch(err){ console.error("classroom opener fetch failed", err); }
+  }
+  addVnBubble(openerText);
+  classHistory.push({from:"npc", text:openerText});
+  setTimeout(()=>document.getElementById("vnChoices").classList.add("show"), reduce()?100:900);
+
+  clearTimeout(classIgnoreTimer);
+  classIgnoreTimer=setTimeout(classCheckinIgnore, 10000);
+}
+function classCheckinEngaged(){
+  if(classIgnoreTimer){ clearTimeout(classIgnoreTimer); classIgnoreTimer=null; }
+}
+async function submitClassCheckinAnswer(){
+  const inp=document.getElementById("johnInput");
+  const raw=inp.value.trim();
+  if(!raw) return;
+  classCheckinEngaged();
+  const btn=document.getElementById("johnSendBtn");
+  const status=document.getElementById("johnAiStatus");
+  const roleSlug=S.checkinRole;
+  const name=dispName(roleSlug);
+  inp.disabled=true; btn.disabled=true;
+  classHistory.push({from:"you", text:raw});
+  status.textContent=`${name} is thinking…`;
+
+  if(classStage===1){
+    const fallback={npc_reply:"…yeah, kind of a rough week tbh", outcome:"weak", relationship_delta:0, grade:"C"};
+    const result=await judgeMove(roleSlug, raw, fallback, ()=>checkinStage1Prompt(roleSlug));
+    status.textContent="";
+    const reply=result.npc_reply||fallback.npc_reply;
+    addVnBubble(reply);
+    classHistory.push({from:"npc", text:reply});
+    classStage=2;
+    inp.value=""; inp.disabled=false; btn.disabled=false;
+    classIgnoreTimer=setTimeout(classCheckinIgnore, 12000);
+    return;
+  }
+  const npcLabel=name+": ";
+  const transcript=classHistory.map(m=>(m.from==="npc"?npcLabel:"Player: ")+m.text).join("\n")+`\nPlayer: ${raw}`;
+  const fallback={npc_reply:"…yeah. thanks I guess.", outcome:"weak", relationship_delta:0, grade:"C"};
+  const result=await judgeMove(roleSlug, raw, fallback, ()=>checkinStage2Prompt(roleSlug, transcript));
+  status.textContent="";
+  addVnBubble(result.npc_reply||fallback.npc_reply);
+  finalizeClassCheckin(result);
+}
+function finalizeClassCheckin(result){
+  clearTimeout(classIgnoreTimer); classIgnoreTimer=null;
+  S.checkinResponse=result.outcome||"weak";
+  S.checkinGrade=result.grade||"C";
+  setRelOf(S.checkinRole, applyRelScore(relOf(S.checkinRole), result, "relationship_delta"));
+  document.getElementById("johnInput").disabled=true;
+  document.getElementById("johnSendBtn").disabled=true;
+  document.getElementById("vnChoices").classList.remove("show");
+  setTimeout(exitClassCheckin, REPLY_LINGER());
+}
+function classCheckinIgnore(){
+  S.checkinResponse="ignored";
+  document.getElementById("johnInput").disabled=true;
+  document.getElementById("johnSendBtn").disabled=true;
+  document.getElementById("vnChoices").classList.remove("show");
+  document.getElementById("johnAiStatus").textContent=`${dispName(S.checkinRole)} shrugs and walks off.`;
+  if(S.playthroughId){
+    fetch(`/api/playthroughs/${S.playthroughId}/decision`, {
+      method:"POST",
+      headers:{"content-type":"application/json", Authorization:"Bearer "+S.authToken},
+      body: JSON.stringify({role_slug:S.checkinRole, day:S.day, player_input:"", medium:S.checkinMedium})
+    }).catch(err=>console.error("ignored classroom decision failed", err));
+  }
+  setTimeout(exitClassCheckin, reduce()?600:2400);
+}
+function exitClassCheckin(){
+  document.getElementById("dlgOverlay").classList.remove("on");
+  S.classFocusRole=null;
+  classCtl.exit();
+  closeDM();
+}
 function applyRelScore(current, result, deltaField){
   if(typeof result.relationship_score==="number") return Math.max(0,Math.min(5,Math.round(result.relationship_score)));
   const delta=typeof result[deltaField]==="number"?Math.round(result[deltaField]):0;
@@ -2632,7 +2794,7 @@ function answerAI(result, forceResolve){
   S.johnRel=nextRel;
   S.johnGrade=result.grade||"C";
   addVnBubble(result.npc_reply||"…");
-  renderHearts(delta<0?"crack":(delta>0?"pop":undefined));
+  renderHearts("john", delta<0?"crack":(delta>0?"pop":undefined));
   if(!isResolved(outcome, forceResolve)){
     /* a hollow answer — John isn't satisfied, leave the dialog open for another
        reply instead of cutting the confrontation off after one line */
@@ -2744,7 +2906,12 @@ async function retryDay(){
     await syncRelFromServer(S.day);
     setCoins(daySnapshot ? daySnapshot.coins : S.coins);
     stub("Morning rewound.");
-    enterDM();
+    if(S.checkinMedium==="in_person"){
+      go("sc-class");
+      classCtl.enterCheckin(enterClassCheckin);
+    }else{
+      enterDM();
+    }
     return;
   }
   await syncRelFromServer(S.day);
@@ -2830,7 +2997,7 @@ function resetAll(){
   Object.assign(S,{day:1,coins:0,johnRel:3,drakeRel:3,alexRel:3,ownsFlower:false,ownsTeddy:false,
                    ownsRug:false,ownsPosters:false,postChoice:0,checkinResponse:null,grade:null,apologyStyle:null,
                    johnGrade:null,apologyGrade:null,apologyOutcome:null,checkinGrade:null,
-                   checkinRole:null, today:null, todayPromise:null,
+                   checkinRole:null, checkinMedium:"dm", classFocusRole:null, today:null, todayPromise:null,
                    playthroughId:null, assignments:null, _playthroughPromise:null, feedPosts:[],
                    johnHistory:[], drakeHistory:[]});
   closeBoard();

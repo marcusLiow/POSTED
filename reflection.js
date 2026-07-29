@@ -48,9 +48,10 @@ fits your personality) — independent of anything the player did just now, pure
   specific days (e.g. "shorter fuse now after being hurt twice on days 2, 4"), or null if unchanged
 - internal_notes: one or two sentences of your own private reasoning, not shown to the player
 - changed: true only if arc_status or tolerance_note actually changed from your current standing above
-- autonomous_post: a short in-character public post (1 sentence, your own voice, fitting your
-  personality/values) IF your current standing genuinely moves you to post today, else null — most
-  days should be null; only post when your private history actually gives you something to say
+- autonomous_post: IF your current standing genuinely moves you to post today, a short in-character
+  public post (1 sentence) written like a real teenager's social post — casual, personality-fitting,
+  vague/subtweet-y the way people actually post rather than stating your feelings outright — else null.
+  Most days should be null; only post when your private history actually gives you something to say
 Respond with STRICT JSON only, no markdown fences, no commentary:
 {"arc_status":"active|strained|broken|resolved","tolerance_note":null,"internal_notes":"...","changed":false,"autonomous_post":null}`;
 }

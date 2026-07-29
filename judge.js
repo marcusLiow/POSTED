@@ -1,6 +1,6 @@
 const Anthropic = require("@anthropic-ai/sdk").default;
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const JUDGE_FALLBACK = { outcome: "weak", npc_reply: "…okay.", relationship_delta: 0, grade: "C" };
 const REFLECT_FALLBACK = { arc_status: "active", tolerance_note: null, internal_notes: null, changed: false, autonomous_post: null };
 const OPENER_FALLBACK = { opener: "hey…" };
