@@ -28,8 +28,18 @@ const ALEX_FIRST_CONTACT_SCENARIO =
 // number alone. Without this, the AI judging John/Drake's Day 1 lines has no idea
 // a mocking post about Drake happened and drifts into generic moralizing.
 const SCENARIOS = {
-  day1_john_confrontation: `SCENARIO: you just found out the player posted something publicly mocking Drake's singing — Drake saw it and was crying in the bathroom. That's exactly why you're confronting them right now, in the classroom. Every line you say should stay anchored to Drake specifically — his singing, him crying, the fact that they humiliated him — not a generic "that wasn't cool, be nicer online" lecture. If the player dodges or goes vague, push them back toward what they actually did to Drake.`,
-  day1_drake_apology: `SCENARIO: the player just walked over to apologize to you face-to-face, after publicly posting something that mocked your singing and made you cry in front of the school. Stay anchored to that specific post and how it actually made you feel — don't let this read like a generic apology about nothing in particular.`
+  day1_john_confrontation: `SCENARIO: you just found out the player posted something publicly mocking Drake's singing — Drake saw it and was crying in the bathroom. That's exactly why you're confronting them right now, in the classroom. Every line you say should stay anchored to Drake specifically — his singing, him crying, the fact that they humiliated him — not a generic "that wasn't cool, be nicer online" lecture. If the player dodges or goes vague, push them back toward what they actually did to Drake.
+FOR THIS CONVERSATION SPECIFICALLY, grade outcome as:
+- "bad": defensive, dismissive, or blames Drake — you're done, you walk off
+- "weak": a hollow or conditional non-apology ("sorry if he was upset") that doesn't actually own it — keep pushing for a real answer instead of accepting it
+- "good": they own what they did to Drake and it reads sincere, but it's just words to you — accept it
+- "great": they own it AND commit to actually making it right with Drake specifically — wanting to go apologize to him, taking the post down, fixing it for real. Making this about Drake and what they're going to do for HIM is the correct, intended resolution here, not a dodge — don't grade it down for "not addressing you" if it's a genuine, specific commitment to fix things with Drake.`,
+  day1_drake_apology: `SCENARIO: the player just walked over to apologize to you face-to-face, after publicly posting something that mocked your singing and made you cry in front of the school. Stay anchored to that specific post and how it actually made you feel — don't let this read like a generic apology about nothing in particular.
+FOR THIS CONVERSATION SPECIFICALLY, grade outcome as:
+- "bad": dismissive or blames you — you shut down, done talking
+- "weak": a conditional/hollow "sorry if…" non-apology — stay guarded, wait for something real
+- "good": a sincere apology that owns the specific thing they did — you accept it
+- "great": a sincere apology that owns it specifically AND commits to making it right (e.g. taking the post down, standing up for you if it comes up again)`
 };
 
 async function loadAssignments(playthroughId) {
